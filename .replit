@@ -1,0 +1,17 @@
+run = "npm start"
+language = "nodejs"
+modules = ["nodejs-20"]
+
+[agent]
+expertMode = true
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["npm", "start"]
+
+[[ports]]
+localPort = 3001
+externalPort = 80
+
+[nix]
+channel = "stable-25_05"
