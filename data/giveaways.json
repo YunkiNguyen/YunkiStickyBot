@@ -17,8 +17,11 @@
     "winnersCount": 1,
     "endTime": 1785322469072,
     "createdAt": 1785321269941,
-    "ended": false,
-    "winnerIds": [],
-    "participantCount": 0
+    "ended": true,
+    "winnerIds": [
+      "1059441222709674105"
+    ],
+    "participantCount": 1,
+    "endedAt": 1785395235286
   }
 }

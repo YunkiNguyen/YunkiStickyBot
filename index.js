@@ -7,6 +7,7 @@ import {
 
 import fs from "fs";
 import path from "path";
+import http from "http";
 import { fileURLToPath, pathToFileURL } from "url";
 
 // =====================================================
@@ -16,12 +17,32 @@ import { fileURLToPath, pathToFileURL } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const COMMANDS_PATH = path.join(__dirname, "commands");
-const GIVEAWAY_STORE_PATH = path.join(
-  __dirname,
-  "utils",
-  "giveawayStore.js"
-);
+// =====================================================
+// DEPLOYMENT / HEALTH SERVER
+// =====================================================
+
+const PORT = Number(process.env.PORT) || 3001;
+
+const healthServer = http.createServer((req, res) => {
+  if (req.url === "/" || req.url === "/healthz") {
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8"
+    });
+
+    res.end("Yunki Bot is online");
+    return;
+  }
+
+  res.writeHead(404, {
+    "Content-Type": "text/plain; charset=utf-8"
+  });
+
+  res.end("Not Found");
+});
+
+healthServer.listen(PORT, "0.0.0.0", () => {
+  console.log(`HEALTH SERVER: http://0.0.0.0:${PORT}`);
+});
 
 // =====================================================
 // CLIENT
@@ -44,7 +65,7 @@ client.commands = new Collection();
 
 async function loadCommands(directory) {
   if (!fs.existsSync(directory)) {
-    console.error(`COMMANDS DIRECTORY NOT FOUND: ${directory}`);
+    console.log("COMMANDS DIRECTORY NOT FOUND");
     return;
   }
 
@@ -64,7 +85,7 @@ async function loadCommands(directory) {
       continue;
     }
 
-    // Chỉ load file .js
+    // Only load JavaScript files
     if (
       !entry.name.endsWith(".js") ||
       entry.name.startsWith("_")
@@ -73,12 +94,15 @@ async function loadCommands(directory) {
     }
 
     try {
-      const fileUrl = pathToFileURL(fullPath).href;
-      const commandModule = await import(fileUrl);
+      const fileUrl =
+        pathToFileURL(fullPath).href;
 
-      const command = commandModule.default;
+      const commandModule =
+        await import(fileUrl);
 
-      // Kiểm tra command
+      const command =
+        commandModule.default;
+
       if (
         !command ||
         !command.data ||
@@ -90,15 +114,8 @@ async function loadCommands(directory) {
         continue;
       }
 
-      const commandName = command.data.name;
-
-      // Nếu command trùng tên
-      if (client.commands.has(commandName)) {
-        console.warn(
-          `DUPLICATE COMMAND: /${commandName}`
-        );
-        continue;
-      }
+      const commandName =
+        command.data.name;
 
       client.commands.set(
         commandName,
@@ -108,7 +125,6 @@ async function loadCommands(directory) {
       console.log(
         `LOADED COMMAND: /${commandName}`
       );
-
     } catch (error) {
       console.error(
         `FAILED TO LOAD: ${fullPath}`
@@ -120,44 +136,43 @@ async function loadCommands(directory) {
 }
 
 // =====================================================
-// GIVEAWAY SCHEDULER
+// GIVEAWAY TIMER
 // =====================================================
 
-const MAX_TIMEOUT = 2_147_483_647;
+const MAX_TIMEOUT = 2147483647;
 
-/**
- * Schedule giveaway end.
- *
- * Node.js setTimeout không hỗ trợ delay quá
- * khoảng 24.8 ngày trong một lần.
- * Vì vậy nếu giveaway dài hơn, bot sẽ chia thành nhiều timer.
- */
-function scheduleGiveaway(client, messageId, endTime) {
-  const remaining = endTime - Date.now();
+function scheduleGiveaway(
+  client,
+  messageId,
+  endTime
+) {
+  const remaining =
+    endTime - Date.now();
 
+  // Giveaway đã hết hạn
   if (remaining <= 0) {
-    setImmediate(async () => {
-      try {
-        const { endGiveaway } = await import(
-          "./commands/utility/giveaway.js"
-        );
-
-        await endGiveaway(
+    import(
+      "./commands/utility/giveaway.js"
+    )
+      .then(({ endGiveaway }) => {
+        return endGiveaway(
           client,
           messageId
         );
-      } catch (error) {
+      })
+      .catch((error) => {
         console.error(
           `FAILED TO END GIVEAWAY: ${messageId}`
         );
 
         console.error(error);
-      }
-    });
+      });
 
     return;
   }
 
+  // Node.js setTimeout không nhận delay
+  // lớn hơn 2^31 - 1 ms
   const delay = Math.min(
     remaining,
     MAX_TIMEOUT
@@ -170,6 +185,12 @@ function scheduleGiveaway(client, messageId, endTime) {
       endTime
     );
   }, delay);
+
+  console.log(
+    `SCHEDULED GIVEAWAY: ${messageId} | ${Math.ceil(
+      remaining / 1000
+    )}s remaining`
+  );
 }
 
 // =====================================================
@@ -178,77 +199,43 @@ function scheduleGiveaway(client, messageId, endTime) {
 
 async function resumeGiveaways() {
   try {
-    const { loadGiveaways } = await import(
-      "./utils/giveawayStore.js"
-    );
+    const { loadGiveaways } =
+      await import(
+        "./utils/giveawayStore.js"
+      );
 
-    const giveaways = loadGiveaways();
-    const entries = Object.entries(giveaways);
+    const giveaways =
+      loadGiveaways();
+
+    const entries =
+      Object.entries(giveaways);
 
     if (entries.length === 0) {
-      console.log("NO GIVEAWAYS TO RESUME");
+      console.log("GIVEAWAYS: 0");
       return;
     }
 
-    let resumed = 0;
-    let expired = 0;
+    console.log(
+      `CHECKING GIVEAWAYS: ${entries.length}`
+    );
 
-    for (const [messageId, giveaway] of entries) {
-      if (!giveaway || giveaway.ended) {
+    for (
+      const [messageId, giveaway]
+      of entries
+    ) {
+      if (
+        !giveaway ||
+        giveaway.ended
+      ) {
         continue;
       }
-
-      const remaining =
-        giveaway.endTime - Date.now();
-
-      // Giveaway đã hết hạn trong lúc bot offline
-      if (remaining <= 0) {
-        expired++;
-
-        console.log(
-          `ENDING EXPIRED GIVEAWAY: ${messageId}`
-        );
-
-        try {
-          const { endGiveaway } = await import(
-            "./commands/utility/giveaway.js"
-          );
-
-          await endGiveaway(
-            client,
-            messageId
-          );
-        } catch (error) {
-          console.error(
-            `FAILED TO END EXPIRED GIVEAWAY: ${messageId}`
-          );
-
-          console.error(error);
-        }
-
-        continue;
-      }
-
-      // Giveaway vẫn còn thời gian
-      resumed++;
 
       scheduleGiveaway(
         client,
         messageId,
         giveaway.endTime
       );
-
-      console.log(
-        `RESUMED GIVEAWAY: ${messageId} | REMAINING: ${Math.ceil(
-          remaining / 1000
-        )}s`
-      );
     }
-
-    console.log(
-      `GIVEAWAYS RESUMED: ${resumed} | EXPIRED: ${expired}`
-    );
-
   } catch (error) {
     console.error(
       "FAILED TO RESUME GIVEAWAYS"
@@ -266,9 +253,15 @@ client.once(
   Events.ClientReady,
   async (readyClient) => {
     console.log("");
-    console.log("========================================");
-    console.log("          YUNKI BOT ONLINE");
-    console.log("========================================");
+    console.log(
+      "========================================"
+    );
+    console.log(
+      "          YUNKI BOT ONLINE"
+    );
+    console.log(
+      "========================================"
+    );
 
     console.log(
       `BOT: ${readyClient.user.tag}`
@@ -286,7 +279,13 @@ client.once(
       `COMMANDS: ${client.commands.size}`
     );
 
-    console.log("========================================");
+    console.log(
+      `HEALTH PORT: ${PORT}`
+    );
+
+    console.log(
+      "========================================"
+    );
     console.log("");
 
     // =================================================
@@ -297,7 +296,8 @@ client.once(
       const commands = [];
 
       for (
-        const command of client.commands.values()
+        const command
+        of client.commands.values()
       ) {
         commands.push(
           command.data.toJSON()
@@ -311,7 +311,6 @@ client.once(
       console.log(
         `REGISTERED COMMANDS: ${commands.length}`
       );
-
     } catch (error) {
       console.error(
         "FAILED TO REGISTER SLASH COMMANDS"
@@ -329,15 +328,40 @@ client.once(
 );
 
 // =====================================================
+// DISCORD ERRORS
+// =====================================================
+
+client.on(
+  Events.Error,
+  (error) => {
+    console.error(
+      "DISCORD CLIENT ERROR"
+    );
+
+    console.error(error);
+  }
+);
+
+client.on(
+  Events.Warn,
+  (message) => {
+    console.warn(
+      `DISCORD WARNING: ${message}`
+    );
+  }
+);
+
+// =====================================================
 // INTERACTION HANDLER
 // =====================================================
 
 client.on(
   Events.InteractionCreate,
   async (interaction) => {
-
-    // Chỉ xử lý Slash Commands
-    if (!interaction.isChatInputCommand()) {
+    // Chỉ xử lý Slash Command
+    if (
+      !interaction.isChatInputCommand()
+    ) {
       return;
     }
 
@@ -346,44 +370,28 @@ client.on(
         interaction.commandName
       );
 
-    // =================================================
-    // COMMAND NOT FOUND
-    // =================================================
-
     if (!command) {
-      console.warn(
+      console.log(
         `COMMAND NOT FOUND: /${interaction.commandName}`
       );
 
-      try {
-        await interaction.reply({
-          content:
-            "Command này chưa được tải.",
-          ephemeral: true
-        });
-      } catch (error) {
-        console.error(error);
-      }
-
-      return;
+      return interaction.reply({
+        content:
+          "Command nay chua duoc tai.",
+        ephemeral: true
+      });
     }
 
     console.log(
       `COMMAND: /${interaction.commandName} | USER: ${interaction.user.tag}`
     );
 
-    // =================================================
-    // EXECUTE COMMAND
-    // =================================================
-
     try {
       await command.execute(
         interaction,
         client
       );
-
     } catch (error) {
-
       console.error(
         `COMMAND ERROR: /${interaction.commandName}`
       );
@@ -391,31 +399,24 @@ client.on(
       console.error(error);
 
       const errorMessage =
-        "Đã xảy ra lỗi khi thực hiện command.";
+        "Da xay ra loi khi thuc hien command.";
 
       try {
-
         if (
           interaction.replied ||
           interaction.deferred
         ) {
-
           await interaction.followUp({
             content: errorMessage,
             ephemeral: true
           });
-
         } else {
-
           await interaction.reply({
             content: errorMessage,
             ephemeral: true
           });
-
         }
-
       } catch (replyError) {
-
         console.error(
           "FAILED TO SEND ERROR RESPONSE"
         );
@@ -427,49 +428,11 @@ client.on(
 );
 
 // =====================================================
-// ERROR HANDLERS
-// =====================================================
-
-client.on(
-  Events.Error,
-  (error) => {
-    console.error(
-      "DISCORD CLIENT ERROR:"
-    );
-
-    console.error(error);
-  }
-);
-
-process.on(
-  "unhandledRejection",
-  (error) => {
-    console.error(
-      "UNHANDLED PROMISE REJECTION:"
-    );
-
-    console.error(error);
-  }
-);
-
-process.on(
-  "uncaughtException",
-  (error) => {
-    console.error(
-      "UNCAUGHT EXCEPTION:"
-    );
-
-    console.error(error);
-  }
-);
-
-// =====================================================
 // START BOT
 // =====================================================
 
 async function startBot() {
   try {
-
     console.log(
       "STARTING YUNKI BOT..."
     );
@@ -478,14 +441,11 @@ async function startBot() {
       "LOADING COMMANDS..."
     );
 
-    // Load toàn bộ:
-    //
-    // commands/
-    // ├── moderation/
-    // └── utility/
-    //
     await loadCommands(
-      COMMANDS_PATH
+      path.join(
+        __dirname,
+        "commands"
+      )
     );
 
     console.log("");
@@ -504,7 +464,6 @@ async function startBot() {
       process.env.DISCORD_TOKEN;
 
     if (!token) {
-
       console.error(
         "DISCORD_TOKEN NOT FOUND"
       );
@@ -516,18 +475,16 @@ async function startBot() {
       process.exit(1);
     }
 
-    console.log(
-      "LOGIN TO DISCORD..."
-    );
-
     // =================================================
     // LOGIN
     // =================================================
 
+    console.log(
+      "LOGIN TO DISCORD..."
+    );
+
     await client.login(token);
-
   } catch (error) {
-
     console.error("");
 
     console.error(
