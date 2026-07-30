@@ -1,3 +1,6 @@
 node_modules/
 .env
 *.log
+
+# Runtime data
+data/*.json
