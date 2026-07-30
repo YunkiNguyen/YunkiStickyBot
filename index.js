@@ -18,31 +18,219 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // =====================================================
-// DEPLOYMENT / HEALTH SERVER
+// CONFIG
 // =====================================================
 
 const PORT = Number(process.env.PORT) || 3001;
 
-const healthServer = http.createServer((req, res) => {
-  if (req.url === "/" || req.url === "/healthz") {
-    res.writeHead(200, {
-      "Content-Type": "text/plain; charset=utf-8"
-    });
+// =====================================================
+// PROCESS LOCK
+// =====================================================
 
-    res.end("Yunki Bot is online");
-    return;
+const LOCK_FILE = path.join(
+  __dirname,
+  ".yunki-bot.lock"
+);
+
+function isProcessRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
+}
 
-  res.writeHead(404, {
-    "Content-Type": "text/plain; charset=utf-8"
-  });
+function acquireProcessLock() {
+  try {
+    if (fs.existsSync(LOCK_FILE)) {
+      try {
+        const oldLock = JSON.parse(
+          fs.readFileSync(
+            LOCK_FILE,
+            "utf8"
+          )
+        );
 
-  res.end("Not Found");
-});
+        if (
+          oldLock?.pid &&
+          oldLock.pid !== process.pid &&
+          isProcessRunning(oldLock.pid)
+        ) {
+          console.error("");
+          console.error(
+            "========================================"
+          );
+          console.error(
+            "       YUNKI BOT ALREADY RUNNING"
+          );
+          console.error(
+            "========================================"
+          );
+          console.error(
+            `PID đang chạy: ${oldLock.pid}`
+          );
+          console.error(
+            "Process hiện tại sẽ tự thoát."
+          );
+          console.error(
+            "========================================"
+          );
+          console.error("");
 
-healthServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`HEALTH SERVER: http://0.0.0.0:${PORT}`);
-});
+          process.exit(1);
+        }
+
+        fs.unlinkSync(LOCK_FILE);
+      } catch {
+        try {
+          fs.unlinkSync(LOCK_FILE);
+        } catch {}
+      }
+    }
+
+    fs.writeFileSync(
+      LOCK_FILE,
+      JSON.stringify(
+        {
+          pid: process.pid,
+          startedAt:
+            new Date().toISOString()
+        },
+        null,
+        2
+      ),
+      {
+        flag: "wx"
+      }
+    );
+
+    console.log(
+      `PROCESS LOCK ACQUIRED: PID ${process.pid}`
+    );
+  } catch (error) {
+    if (error.code === "EEXIST") {
+      console.error(
+        "Một process Yunki Bot khác đang chạy."
+      );
+
+      process.exit(1);
+    }
+
+    throw error;
+  }
+}
+
+function releaseProcessLock() {
+  try {
+    if (!fs.existsSync(LOCK_FILE)) {
+      return;
+    }
+
+    const lock = JSON.parse(
+      fs.readFileSync(
+        LOCK_FILE,
+        "utf8"
+      )
+    );
+
+    if (lock.pid === process.pid) {
+      fs.unlinkSync(LOCK_FILE);
+
+      console.log(
+        "PROCESS LOCK RELEASED"
+      );
+    }
+  } catch {
+    // Không crash khi cleanup
+  }
+}
+
+acquireProcessLock();
+
+process.once(
+  "exit",
+  releaseProcessLock
+);
+
+process.once(
+  "SIGINT",
+  () => {
+    releaseProcessLock();
+    process.exit(0);
+  }
+);
+
+process.once(
+  "SIGTERM",
+  () => {
+    releaseProcessLock();
+    process.exit(0);
+  }
+);
+
+// =====================================================
+// HEALTH SERVER
+// =====================================================
+
+const healthServer =
+  http.createServer(
+    (req, res) => {
+      if (
+        req.url === "/" ||
+        req.url === "/healthz"
+      ) {
+        res.writeHead(200, {
+          "Content-Type":
+            "text/plain; charset=utf-8"
+        });
+
+        res.end(
+          "Yunki Bot is online"
+        );
+
+        return;
+      }
+
+      res.writeHead(404, {
+        "Content-Type":
+          "text/plain; charset=utf-8"
+      });
+
+      res.end(
+        "Not Found"
+      );
+    }
+  );
+
+healthServer.on(
+  "error",
+  (error) => {
+    console.error(
+      "HEALTH SERVER ERROR:"
+    );
+
+    console.error(error);
+
+    if (
+      error.code === "EADDRINUSE"
+    ) {
+      console.error(
+        `Port ${PORT} đang được sử dụng.`
+      );
+    }
+  }
+);
+
+healthServer.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      `HEALTH SERVER: http://0.0.0.0:${PORT}`
+    );
+  }
+);
 
 // =====================================================
 // CLIENT
@@ -57,48 +245,72 @@ const client = new Client({
   ]
 });
 
-client.commands = new Collection();
+client.commands =
+  new Collection();
 
 // =====================================================
 // COMMAND LOADER
 // =====================================================
 
-async function loadCommands(directory) {
+async function loadCommands(
+  directory
+) {
   if (!fs.existsSync(directory)) {
-    console.log("COMMANDS DIRECTORY NOT FOUND");
+    console.log(
+      "COMMANDS DIRECTORY NOT FOUND"
+    );
+
     return;
   }
 
-  const entries = fs.readdirSync(directory, {
-    withFileTypes: true
-  });
-
-  for (const entry of entries) {
-    const fullPath = path.join(
+  const entries =
+    fs.readdirSync(
       directory,
-      entry.name
+      {
+        withFileTypes: true
+      }
     );
 
-    // Load sub-folder
-    if (entry.isDirectory()) {
-      await loadCommands(fullPath);
+  for (
+    const entry of entries
+  ) {
+    const fullPath =
+      path.join(
+        directory,
+        entry.name
+      );
+
+    if (
+      entry.isDirectory()
+    ) {
+      await loadCommands(
+        fullPath
+      );
+
       continue;
     }
 
-    // Only load JavaScript files
     if (
-      !entry.name.endsWith(".js") ||
-      entry.name.startsWith("_")
+      !entry.name.endsWith(
+        ".js"
+      ) ||
+      entry.name.startsWith(
+        "_"
+      )
     ) {
       continue;
     }
 
     try {
       const fileUrl =
-        pathToFileURL(fullPath).href;
+        pathToFileURL(
+          fullPath
+        ).href;
 
       const commandModule =
-        await import(fileUrl);
+        await import(
+          fileUrl
+        );
 
       const command =
         commandModule.default;
@@ -111,6 +323,7 @@ async function loadCommands(directory) {
         console.log(
           `INVALID COMMAND: ${fullPath}`
         );
+
         continue;
       }
 
@@ -136,55 +349,90 @@ async function loadCommands(directory) {
 }
 
 // =====================================================
-// GIVEAWAY TIMER
+// GIVEAWAY SCHEDULER
 // =====================================================
 
-const MAX_TIMEOUT = 2147483647;
+// Node.js setTimeout có giới hạn khoảng 24.8 ngày.
+// Giveaway dài hơn mức này phải chia thành nhiều timer.
 
-function scheduleGiveaway(
-  client,
+const MAX_TIMEOUT =
+  2147483647;
+
+const giveawayTimers =
+  new Map();
+
+function clearGiveawayTimer(
+  messageId
+) {
+  const timer =
+    giveawayTimers.get(
+      messageId
+    );
+
+  if (timer) {
+    clearTimeout(timer);
+
+    giveawayTimers.delete(
+      messageId
+    );
+  }
+}
+
+async function scheduleGiveaway(
   messageId,
   endTime
 ) {
+  clearGiveawayTimer(
+    messageId
+  );
+
   const remaining =
     endTime - Date.now();
 
-  // Giveaway đã hết hạn
   if (remaining <= 0) {
-    import(
-      "./commands/utility/giveaway.js"
-    )
-      .then(({ endGiveaway }) => {
-        return endGiveaway(
-          client,
-          messageId
-        );
-      })
-      .catch((error) => {
-        console.error(
-          `FAILED TO END GIVEAWAY: ${messageId}`
-        );
+    try {
+      const {
+        endGiveaway
+      } = await import(
+        "./commands/utility/giveaway.js"
+      );
 
-        console.error(error);
-      });
+      await endGiveaway(
+        client,
+        messageId
+      );
+    } catch (error) {
+      console.error(
+        `FAILED TO END GIVEAWAY: ${messageId}`
+      );
+
+      console.error(error);
+    }
 
     return;
   }
 
-  // Node.js setTimeout không nhận delay
-  // lớn hơn 2^31 - 1 ms
-  const delay = Math.min(
-    remaining,
-    MAX_TIMEOUT
-  );
-
-  setTimeout(() => {
-    scheduleGiveaway(
-      client,
-      messageId,
-      endTime
+  const delay =
+    Math.min(
+      remaining,
+      MAX_TIMEOUT
     );
-  }, delay);
+
+  const timer =
+    setTimeout(
+      () => {
+        scheduleGiveaway(
+          messageId,
+          endTime
+        );
+      },
+      delay
+    );
+
+  giveawayTimers.set(
+    messageId,
+    timer
+  );
 
   console.log(
     `SCHEDULED GIVEAWAY: ${messageId} | ${Math.ceil(
@@ -199,29 +447,29 @@ function scheduleGiveaway(
 
 async function resumeGiveaways() {
   try {
-    const { loadGiveaways } =
-      await import(
-        "./utils/giveawayStore.js"
-      );
+    const {
+      loadGiveaways
+    } = await import(
+      "./utils/giveawayStore.js"
+    );
 
     const giveaways =
       loadGiveaways();
 
     const entries =
-      Object.entries(giveaways);
-
-    if (entries.length === 0) {
-      console.log("GIVEAWAYS: 0");
-      return;
-    }
+      Object.entries(
+        giveaways
+      );
 
     console.log(
       `CHECKING GIVEAWAYS: ${entries.length}`
     );
 
     for (
-      const [messageId, giveaway]
-      of entries
+      const [
+        messageId,
+        giveaway
+      ] of entries
     ) {
       if (
         !giveaway ||
@@ -230,8 +478,7 @@ async function resumeGiveaways() {
         continue;
       }
 
-      scheduleGiveaway(
-        client,
+      await scheduleGiveaway(
         messageId,
         giveaway.endTime
       );
@@ -251,14 +498,19 @@ async function resumeGiveaways() {
 
 client.once(
   Events.ClientReady,
-  async (readyClient) => {
+  async (
+    readyClient
+  ) => {
     console.log("");
+
     console.log(
       "========================================"
     );
+
     console.log(
       "          YUNKI BOT ONLINE"
     );
+
     console.log(
       "========================================"
     );
@@ -284,12 +536,17 @@ client.once(
     );
 
     console.log(
+      `PROCESS PID: ${process.pid}`
+    );
+
+    console.log(
       "========================================"
     );
+
     console.log("");
 
     // =================================================
-    // REGISTER SLASH COMMANDS
+    // REGISTER COMMANDS
     // =================================================
 
     try {
@@ -304,9 +561,10 @@ client.once(
         );
       }
 
-      await readyClient.application.commands.set(
-        commands
-      );
+      await readyClient
+        .application
+        .commands
+        .set(commands);
 
       console.log(
         `REGISTERED COMMANDS: ${commands.length}`
@@ -357,8 +615,9 @@ client.on(
 
 client.on(
   Events.InteractionCreate,
-  async (interaction) => {
-    // Chỉ xử lý Slash Command
+  async (
+    interaction
+  ) => {
     if (
       !interaction.isChatInputCommand()
     ) {
@@ -375,15 +634,19 @@ client.on(
         `COMMAND NOT FOUND: /${interaction.commandName}`
       );
 
-      return interaction.reply({
-        content:
-          "Command nay chua duoc tai.",
-        ephemeral: true
-      });
+      try {
+        await interaction.reply({
+          content:
+            "❌ Command này chưa được tải.",
+          ephemeral: true
+        });
+      } catch {}
+
+      return;
     }
 
     console.log(
-      `COMMAND: /${interaction.commandName} | USER: ${interaction.user.tag}`
+      `COMMAND: /${interaction.commandName} | USER: ${interaction.user.tag} | ID: ${interaction.id}`
     );
 
     try {
@@ -399,7 +662,7 @@ client.on(
       console.error(error);
 
       const errorMessage =
-        "Da xay ra loi khi thuc hien command.";
+        "❌ Đã xảy ra lỗi khi thực hiện command.";
 
       try {
         if (
@@ -407,21 +670,27 @@ client.on(
           interaction.deferred
         ) {
           await interaction.followUp({
-            content: errorMessage,
+            content:
+              errorMessage,
             ephemeral: true
           });
         } else {
           await interaction.reply({
-            content: errorMessage,
+            content:
+              errorMessage,
             ephemeral: true
           });
         }
-      } catch (replyError) {
+      } catch (
+        replyError
+      ) {
         console.error(
           "FAILED TO SEND ERROR RESPONSE"
         );
 
-        console.error(replyError);
+        console.error(
+          replyError
+        );
       }
     }
   }
@@ -456,10 +725,6 @@ async function startBot() {
 
     console.log("");
 
-    // =================================================
-    // TOKEN
-    // =================================================
-
     const token =
       process.env.DISCORD_TOKEN;
 
@@ -475,15 +740,13 @@ async function startBot() {
       process.exit(1);
     }
 
-    // =================================================
-    // LOGIN
-    // =================================================
-
     console.log(
       "LOGIN TO DISCORD..."
     );
 
-    await client.login(token);
+    await client.login(
+      token
+    );
   } catch (error) {
     console.error("");
 
@@ -508,9 +771,5 @@ async function startBot() {
     process.exit(1);
   }
 }
-
-// =====================================================
-// RUN
-// =====================================================
 
 startBot();
