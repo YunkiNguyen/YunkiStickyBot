@@ -24,7 +24,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3001;
 
 // =====================================================
-// PROCESS LOCK
+// PROCESS LOCK - YUNKI BOT
 // =====================================================
 
 const LOCK_FILE = path.join(
@@ -33,30 +33,44 @@ const LOCK_FILE = path.join(
 );
 
 function isProcessRunning(pid) {
+  if (!pid || pid === process.pid) {
+    return false;
+  }
+
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (error) {
+    // ESRCH = process không tồn tại
+    // EPERM = process tồn tại nhưng không có quyền kiểm tra
+    if (error.code === "EPERM") {
+      return true;
+    }
+
     return false;
   }
 }
 
 function acquireProcessLock() {
-  try {
-    if (fs.existsSync(LOCK_FILE)) {
-      try {
-        const oldLock = JSON.parse(
-          fs.readFileSync(
-            LOCK_FILE,
-            "utf8"
-          )
-        );
+  // ---------------------------------------------------
+  // Kiểm tra lock cũ
+  // ---------------------------------------------------
 
-        if (
-          oldLock?.pid &&
-          oldLock.pid !== process.pid &&
-          isProcessRunning(oldLock.pid)
-        ) {
+  if (fs.existsSync(LOCK_FILE)) {
+    try {
+      const raw = fs.readFileSync(
+        LOCK_FILE,
+        "utf8"
+      );
+
+      const oldLock = JSON.parse(raw);
+
+      if (
+        oldLock &&
+        oldLock.pid &&
+        oldLock.pid !== process.pid
+      ) {
+        if (isProcessRunning(oldLock.pid)) {
           console.error("");
           console.error(
             "========================================"
@@ -71,7 +85,13 @@ function acquireProcessLock() {
             `PID đang chạy: ${oldLock.pid}`
           );
           console.error(
-            "Process hiện tại sẽ tự thoát."
+            `PID hiện tại: ${process.pid}`
+          );
+          console.error(
+            `Started: ${oldLock.startedAt || "Unknown"}`
+          );
+          console.error(
+            "Không khởi động thêm process."
           );
           console.error(
             "========================================"
@@ -81,26 +101,44 @@ function acquireProcessLock() {
           process.exit(1);
         }
 
-        fs.unlinkSync(LOCK_FILE);
-      } catch {
+        // Process cũ không còn chạy
+        console.log(
+          `STALE LOCK FOUND: PID ${oldLock.pid}`
+        );
+
         try {
           fs.unlinkSync(LOCK_FILE);
         } catch {}
       }
-    }
+    } catch (error) {
+      // Lock bị hỏng → xóa để tạo lại
+      console.log(
+        "INVALID LOCK FILE - REMOVING..."
+      );
 
+      try {
+        fs.unlinkSync(LOCK_FILE);
+      } catch {}
+    }
+  }
+
+  // ---------------------------------------------------
+  // Tạo lock mới
+  // ---------------------------------------------------
+
+  try {
     fs.writeFileSync(
       LOCK_FILE,
       JSON.stringify(
         {
           pid: process.pid,
-          startedAt:
-            new Date().toISOString()
+          startedAt: new Date().toISOString()
         },
         null,
         2
       ),
       {
+        encoding: "utf8",
         flag: "wx"
       }
     );
@@ -110,9 +148,14 @@ function acquireProcessLock() {
     );
   } catch (error) {
     if (error.code === "EEXIST") {
+      console.error("");
       console.error(
-        "Một process Yunki Bot khác đang chạy."
+        "YUNKI BOT IS ALREADY STARTING/RUNNING."
       );
+      console.error(
+        "Process hiện tại sẽ tự thoát."
+      );
+      console.error("");
 
       process.exit(1);
     }
@@ -121,30 +164,39 @@ function acquireProcessLock() {
   }
 }
 
+// =====================================================
+// RELEASE LOCK
+// =====================================================
+
 function releaseProcessLock() {
   try {
     if (!fs.existsSync(LOCK_FILE)) {
       return;
     }
 
-    const lock = JSON.parse(
-      fs.readFileSync(
-        LOCK_FILE,
-        "utf8"
-      )
+    const raw = fs.readFileSync(
+      LOCK_FILE,
+      "utf8"
     );
 
-    if (lock.pid === process.pid) {
+    const lock = JSON.parse(raw);
+
+    // Chỉ process sở hữu lock mới được xóa
+    if (lock?.pid === process.pid) {
       fs.unlinkSync(LOCK_FILE);
 
       console.log(
         "PROCESS LOCK RELEASED"
       );
     }
-  } catch {
-    // Không crash khi cleanup
+  } catch (error) {
+    // Không để cleanup làm crash bot
   }
 }
+
+// =====================================================
+// REGISTER LOCK
+// =====================================================
 
 acquireProcessLock();
 
@@ -156,6 +208,10 @@ process.once(
 process.once(
   "SIGINT",
   () => {
+    console.log(
+      "\nSHUTTING DOWN YUNKI BOT..."
+    );
+
     releaseProcessLock();
     process.exit(0);
   }
@@ -164,11 +220,14 @@ process.once(
 process.once(
   "SIGTERM",
   () => {
+    console.log(
+      "\nTERMINATING YUNKI BOT..."
+    );
+
     releaseProcessLock();
     process.exit(0);
   }
 );
-
 // =====================================================
 // HEALTH SERVER
 // =====================================================
