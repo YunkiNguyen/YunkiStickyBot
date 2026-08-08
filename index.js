@@ -505,52 +505,98 @@ async function scheduleGiveaway(
 // =====================================================
 
 async function resumeGiveaways() {
-  try {
-    const {
-      loadGiveaways
-    } = await import(
-      "./utils/giveawayStore.js"
-    );
 
-    const giveaways =
-      loadGiveaways();
+try {
 
-    const entries =
-      Object.entries(
-        giveaways
-      );
+const {
+loadGiveaways
+} = await import(
+"./utils/giveawayStore.js"
+);
 
-    console.log(
-      `CHECKING GIVEAWAYS: ${entries.length}`
-    );
 
-    for (
-      const [
-        messageId,
-        giveaway
-      ] of entries
-    ) {
-      if (
-        !giveaway ||
-        giveaway.ended
-      ) {
-        continue;
-      }
+const giveaways = loadGiveaways();
 
-      await scheduleGiveaway(
-        messageId,
-        giveaway.endTime
-      );
-    }
-  } catch (error) {
-    console.error(
-      "FAILED TO RESUME GIVEAWAYS"
-    );
+const entries = Object.entries(giveaways);
 
-    console.error(error);
-  }
+
+console.log(
+`CHECKING GIVEAWAYS: ${entries.length}`
+);
+
+
+
+for (
+const [
+messageId,
+giveaway
+] of entries
+) {
+
+
+if (
+!giveaway ||
+giveaway.ended === true
+) {
+continue;
 }
 
+
+
+// Giveaway đã hết hạn khi bot offline
+
+if (
+Number(giveaway.endTime)
+<= Date.now()
+) {
+
+
+console.log(
+`AUTO END GIVEAWAY: ${messageId}`
+);
+
+
+await endGiveaway(
+client,
+messageId
+);
+
+
+continue;
+
+}
+
+
+
+// Giveaway còn hạn
+
+await scheduleGiveaway(
+messageId,
+giveaway.endTime
+);
+
+
+console.log(
+`RESUMED GIVEAWAY: ${messageId}`
+);
+
+
+}
+
+
+
+} catch(error){
+
+
+console.error(
+"FAILED TO RESUME GIVEAWAYS",
+error
+);
+
+
+}
+
+}
 // =====================================================
 // READY
 // =====================================================

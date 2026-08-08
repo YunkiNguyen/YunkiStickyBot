@@ -2,124 +2,102 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = path.join(__dirname, "../data");
-const DATA_FILE = path.join(DATA_DIR, "giveaways.json");
 
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+const FILE = path.join(
+    __dirname,
+    "../data/giveaways.json"
+);
 
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(
-      DATA_FILE,
-      "{}",
-      "utf8"
-    );
-  }
-}
 
-export function loadGiveaways() {
-  ensureFile();
+function init(){
 
-  try {
-    const raw = fs.readFileSync(
-      DATA_FILE,
-      "utf8"
-    );
+    if(!fs.existsSync(FILE)){
 
-    if (!raw.trim()) {
-      return {};
+        fs.mkdirSync(
+            path.dirname(FILE),
+            {
+                recursive:true
+            }
+        );
+
+        fs.writeFileSync(
+            FILE,
+            "{}"
+        );
+
     }
 
-    const data = JSON.parse(raw);
-
-    if (
-      typeof data !== "object" ||
-      Array.isArray(data) ||
-      data === null
-    ) {
-      return {};
-    }
-
-    return data;
-  } catch (error) {
-    console.error(
-      "❌ Không thể đọc giveaways.json:",
-      error
-    );
-
-    return {};
-  }
 }
 
-export function saveGiveaways(data) {
-  ensureFile();
 
-  try {
-    const tempFile =
-      `${DATA_FILE}.tmp`;
+
+export function loadGiveaways(){
+
+    init();
+
+    return JSON.parse(
+        fs.readFileSync(
+            FILE,
+            "utf8"
+        )
+    );
+
+}
+
+
+
+export function saveGiveaways(data){
+
+    init();
 
     fs.writeFileSync(
-      tempFile,
-      JSON.stringify(data, null, 2),
-      "utf8"
+        FILE,
+        JSON.stringify(
+            data,
+            null,
+            2
+        )
     );
 
-    fs.renameSync(
-      tempFile,
-      DATA_FILE
-    );
-  } catch (error) {
-    console.error(
-      "❌ Không thể lưu giveaways.json:",
-      error
-    );
-  }
 }
 
-export function getGiveaway(messageId) {
-  const data = loadGiveaways();
 
-  return data[messageId] || null;
+
+export function getGiveaway(id){
+
+    const data =
+        loadGiveaways();
+
+    return data[id];
+
 }
 
-export function setGiveaway(
-  messageId,
-  giveaway
-) {
-  const data = loadGiveaways();
 
-  data[messageId] = giveaway;
 
-  saveGiveaways(data);
+export function setGiveaway(id,value){
 
-  return giveaway;
+    const data =
+        loadGiveaways();
+
+    data[id] = value;
+
+    saveGiveaways(data);
+
 }
 
-export function deleteGiveaway(
-  messageId
-) {
-  const data = loadGiveaways();
 
-  delete data[messageId];
 
-  saveGiveaways(data);
-}
+export function removeGiveaway(id){
 
-export function getActiveGiveaways() {
-  const data = loadGiveaways();
+    const data =
+        loadGiveaways();
 
-  return Object.entries(data)
-    .filter(([, giveaway]) =>
-      giveaway &&
-      giveaway.ended !== true
-    )
-    .map(([messageId, giveaway]) => ({
-      messageId,
-      ...giveaway
-    }));
+    delete data[id];
+
+    saveGiveaways(data);
+
 }
