@@ -514,6 +514,12 @@ loadGiveaways
 "./utils/giveawayStore.js"
 );
 
+const {
+endGiveaway
+} = await import(
+"./commands/utility/giveaway.js"
+);
+
 
 const giveaways = loadGiveaways();
 
