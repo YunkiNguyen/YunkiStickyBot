@@ -4,6 +4,8 @@ import {
   PermissionFlagsBits
 } from "discord.js";
 
+import { getUserWarnings } from "../../utils/warningsStore.js";
+
 export default {
   data: new SlashCommandBuilder()
     .setName("warnings")
@@ -27,11 +29,10 @@ export default {
       interaction.options.getUser("user") ||
       interaction.user;
 
-    const guildWarnings =
-      interaction.client.warnings?.get(interaction.guild.id);
-
-    const warnings =
-      guildWarnings?.get(user.id) || [];
+    const warnings = getUserWarnings(
+      interaction.guild.id,
+      user.id
+    );
 
     if (!warnings.length) {
       return interaction.reply({
