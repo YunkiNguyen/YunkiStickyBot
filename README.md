@@ -36,20 +36,22 @@ YunkiBot/
 
 ## 2. Replit Secrets
 
-Tạo Secret:
+Tạo các Secret:
 
-- Key: `DISCORD_TOKEN`
-- Value: Bot Token của bạn
+- Key: `DISCORD_TOKEN` — Bot Token của bạn
+- Key: `GUILD_ID` — ID server Discord dùng để đăng ký Guild Commands
 
 **Không gửi Bot Token cho người khác và không đặt Token trong `config.js`.**
 
+`DISCORD_GUILD_ID` cũng được hỗ trợ như tên thay thế cho `GUILD_ID`.
+
 ## 3. Điền ID
 
-Mở `config.js` và thay:
+`config.js` lấy các giá trị sau:
 
-- `botId`
-- `guildId`
-- `defaultChannelId`
+- `botId` — ID bot
+- `GUILD_ID` / `DISCORD_GUILD_ID` — ID server
+- `defaultChannelId` — kênh mặc định nếu command cần dùng
 
 `defaultChannelId` hiện chỉ để lưu cấu hình; các command không bắt buộc phải dùng nó.
 
@@ -65,7 +67,7 @@ npm install
 npm run deploy
 ```
 
-Nếu có `guildId`, command sẽ đăng ký riêng cho server và thường cập nhật nhanh hơn Global Commands.
+Khi có `GUILD_ID`, command sẽ được đăng ký riêng cho server và thường cập nhật nhanh hơn Global Commands.
 
 ## 6. Chạy bot
 
@@ -90,5 +92,9 @@ Bot cần tối thiểu các quyền phù hợp với command:
 Ngoài permission, role của bot phải nằm **cao hơn các member mà bot cần moderate**.
 
 ## Lưu ý
+
+Warning được lưu trong `data/warnings.json` để không mất dữ liệu khi bot restart. File runtime JSON vẫn được giữ ngoài Git bởi `.gitignore`.
+
+Giveaway cũng lưu dữ liệu trong `data/giveaways.json` và store đã có xử lý file JSON lỗi/corrupt an toàn hơn.
 
 Đây là bản rebuild sạch, không phụ thuộc `handlers/commandHandler.js` cũ.
