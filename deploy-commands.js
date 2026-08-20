@@ -26,11 +26,20 @@ const commands = [];
 
 for (const folder of ["moderation", "utility"]) {
   const folderPath = path.join(__dirname, "commands", folder);
-  const files = fs.readdirSync(folderPath).filter(file => file.endsWith(".js"));
+  const files = fs
+    .readdirSync(folderPath)
+    .filter(file => file.endsWith(".js"));
 
   for (const file of files) {
-    const command = (await import(pathToFileURL(path.join(folderPath, file)).href)).default;
-    if (command?.data) commands.push(command.data.toJSON());
+    const command = (
+      await import(
+        pathToFileURL(path.join(folderPath, file)).href
+      )
+    ).default;
+
+    if (command?.data) {
+      commands.push(command.data.toJSON());
+    }
   }
 }
 
@@ -40,15 +49,32 @@ console.log(`📦 Tổng số commands: ${commands.length}`);
 console.log("🚀 Đang đăng ký Slash Commands...");
 
 if (config.guildId && config.guildId !== "DAN_ID_SERVER_VAO_DAY") {
+  // Xóa toàn bộ Global Commands cũ.
+  // Nếu trước đây bot từng deploy Global Commands,
+  // Discord sẽ giữ chúng và có thể hiển thị command bị trùng
+  // với Guild Commands.
+  console.log("🧹 Đang xóa Global Commands cũ...");
+
+  await rest.put(
+    Routes.applicationCommands(config.botId),
+    { body: [] }
+  );
+
+  console.log("✅ Đã xóa Global Commands cũ.");
+
+  // Đăng ký lại toàn bộ command vào đúng server.
   await rest.put(
     Routes.applicationGuildCommands(config.botId, config.guildId),
     { body: commands }
   );
+
   console.log("✅ Đăng ký Guild Commands thành công.");
+  console.log(`🏠 Guild ID: ${config.guildId}`);
 } else {
   await rest.put(
     Routes.applicationCommands(config.botId),
     { body: commands }
   );
+
   console.log("✅ Đăng ký Global Commands thành công.");
 }
