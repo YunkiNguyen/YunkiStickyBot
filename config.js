@@ -3,7 +3,8 @@ const config = {
 
   // Có thể đặt GUILD_ID trong Replit Secrets để deploy slash commands
   // trực tiếp vào server và cập nhật gần như ngay lập tức.
-  guildId: process.env.GUILD_ID || process.env.DISCORD_GUILD_ID || "",
+  // Fallback là server Giáo Phái Fibi Chuppi của project.
+  guildId: process.env.GUILD_ID || process.env.DISCORD_GUILD_ID || "1407642009396842547",
 
   defaultChannelId: "",
 
