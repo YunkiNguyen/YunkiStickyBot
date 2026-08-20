@@ -3,6 +3,8 @@ import {
   PermissionFlagsBits
 } from "discord.js";
 
+import { addWarning } from "../../utils/warningsStore.js";
+
 export default {
   data: new SlashCommandBuilder()
     .setName("warn")
@@ -67,42 +69,27 @@ export default {
     }
 
     try {
-      // Warn data được xử lý bởi hệ thống database hiện tại.
-      // File này sẽ dùng interaction.client.warnings nếu index.js đã khởi tạo.
-      if (!interaction.client.warnings) {
-        interaction.client.warnings = new Map();
-      }
-
-      const guildWarnings =
-        interaction.client.warnings.get(interaction.guild.id) ||
-        new Map();
-
-      const userWarnings =
-        guildWarnings.get(target.id) || [];
-
-      userWarnings.push({
-        reason,
-        moderator: interaction.user.id,
-        timestamp: Date.now()
-      });
-
-      guildWarnings.set(target.id, userWarnings);
-      interaction.client.warnings.set(
+      const warnings = addWarning(
         interaction.guild.id,
-        guildWarnings
+        target.id,
+        {
+          reason,
+          moderator: interaction.user.id,
+          timestamp: Date.now()
+        }
       );
 
       return interaction.reply({
         content:
           `⚠️ Đã cảnh cáo **${target.user.tag}**.\n` +
           `> Lý do: ${reason}\n` +
-          `> Tổng cảnh cáo: **${userWarnings.length}**`
+          `> Tổng cảnh cáo: **${warnings.length}**`
       });
     } catch (error) {
       console.error("[WARN ERROR]", error);
 
       return interaction.reply({
-        content: "❌ Không thể cảnh cáo thành viên này.",
+        content: "❌ Không thể lưu cảnh cáo cho thành viên này.",
         ephemeral: true
       });
     }
