@@ -657,37 +657,8 @@ client.once(
 
     console.log("");
 
-    // =================================================
-    // REGISTER COMMANDS
-    // =================================================
-
-    try {
-      const commands = [];
-
-      for (
-        const command
-        of client.commands.values()
-      ) {
-        commands.push(
-          command.data.toJSON()
-        );
-      }
-
-      await readyClient
-        .application
-        .commands
-        .set(commands);
-
-      console.log(
-        `REGISTERED COMMANDS: ${commands.length}`
-      );
-    } catch (error) {
-      console.error(
-        "FAILED TO REGISTER SLASH COMMANDS"
-      );
-
-      console.error(error);
-    }
+    // Không tự đăng ký Global Commands ở đây nữa.
+    // Chỉ dùng `npm run deploy` để tránh bị trùng lệnh.
 
     // =================================================
     // RESUME GIVEAWAYS
