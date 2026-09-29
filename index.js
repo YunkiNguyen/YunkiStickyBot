@@ -2,13 +2,18 @@ import {
   Client,
   Collection,
   GatewayIntentBits,
-  Events
+  Events,
+  ChannelType
 } from "discord.js";
 
 import fs from "fs";
 import path from "path";
 import http from "http";
 import { fileURLToPath, pathToFileURL } from "url";
+import {
+  joinVoiceChannel,
+  getVoiceConnection
+} from "@discordjs/voice";
 
 // =====================================================
 // PATH
@@ -604,6 +609,79 @@ error
 }
 
 }
+
+// =====================================================
+// RESUME VOICE CONNECTIONS
+// =====================================================
+
+async function resumeVoiceConnections() {
+  try {
+    const { loadVoice, removeVoiceChannel } = await import(
+      "./utils/voiceStore.js"
+    );
+
+    const saved = loadVoice();
+    const entries = Object.entries(saved);
+
+    console.log(`CHECKING VOICE CHANNELS: ${entries.length}`);
+
+    for (const [guildId, channelId] of entries) {
+      try {
+        const guild = client.guilds.cache.get(guildId);
+
+        if (!guild) {
+          console.log(`VOICE SKIP: Guild ${guildId} not found`);
+          removeVoiceChannel(guildId);
+          continue;
+        }
+
+        const channel = guild.channels.cache.get(channelId);
+
+        if (
+          !channel ||
+          (channel.type !== ChannelType.GuildVoice &&
+            channel.type !== ChannelType.GuildStageVoice)
+        ) {
+          console.log(`VOICE SKIP: Channel ${channelId} invalid`);
+          removeVoiceChannel(guildId);
+          continue;
+        }
+
+        const me = guild.members.me;
+        const permissions = channel.permissionsFor(me);
+
+        if (!permissions?.has(["Connect", "ViewChannel"])) {
+          console.log(`VOICE SKIP: Missing permissions in ${channel.name}`);
+          continue;
+        }
+
+        const existing = getVoiceConnection(guildId);
+        if (existing) {
+          existing.destroy();
+        }
+
+        const connection = joinVoiceChannel({
+          channelId: channel.id,
+          guildId: guild.id,
+          adapterCreator: guild.voiceAdapterCreator,
+          selfDeaf: true,
+          selfMute: true
+        });
+
+        connection.on("error", (error) => {
+          console.error(`Voice reconnect error (${guildId}):`, error);
+        });
+
+        console.log(`AUTO JOIN VOICE: ${channel.name} (${guild.name})`);
+      } catch (error) {
+        console.error(`FAILED TO REJOIN VOICE: ${guildId}`, error);
+      }
+    }
+  } catch (error) {
+    console.error("FAILED TO RESUME VOICE CONNECTIONS", error);
+  }
+}
+
 // =====================================================
 // READY
 // =====================================================
@@ -661,10 +739,11 @@ client.once(
     // Chỉ dùng `npm run deploy` để tránh bị trùng lệnh.
 
     // =================================================
-    // RESUME GIVEAWAYS
+    // RESUME GIVEAWAYS + VOICE
     // =================================================
 
     await resumeGiveaways();
+    await resumeVoiceConnections();
   }
 );
 

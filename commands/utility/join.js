@@ -7,6 +7,7 @@ import {
   joinVoiceChannel,
   getVoiceConnection
 } from "@discordjs/voice";
+import { setVoiceChannel } from "../../utils/voiceStore.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -61,6 +62,11 @@ export default {
       console.error("Voice connection error:", error);
     });
 
-    await interaction.reply(`✅ Đã vào **${channel.name}** và sẽ treo ở đây cho đến khi dùng \`/leave\`.`);
+    // Lưu lại để bot tự join khi restart
+    setVoiceChannel(interaction.guildId, channel.id);
+
+    await interaction.reply(
+      `✅ Đã vào **${channel.name}** và sẽ treo ở đây cho đến khi dùng \`/leave\`.\nBot sẽ tự join lại kênh này sau khi restart.`
+    );
   }
 };
