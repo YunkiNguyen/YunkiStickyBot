@@ -8,6 +8,7 @@ import {
   getVoiceConnection
 } from "@discordjs/voice";
 import { setVoiceChannel } from "../../utils/voiceStore.js";
+import { attachVoiceConnectionHandlers } from "../../utils/voiceConnection.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -22,7 +23,7 @@ export default {
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.MoveMembers),
 
-  async execute(interaction) {
+  async execute(interaction, client) {
     const member = interaction.member;
     let channel = interaction.options.getChannel("channel");
 
@@ -47,7 +48,9 @@ export default {
 
     const existing = getVoiceConnection(interaction.guildId);
     if (existing) {
-      existing.destroy();
+      try {
+        existing.destroy();
+      } catch {}
     }
 
     const connection = joinVoiceChannel({
@@ -58,15 +61,13 @@ export default {
       selfMute: true
     });
 
-    connection.on("error", (error) => {
-      console.error("Voice connection error:", error);
-    });
+    attachVoiceConnectionHandlers(connection, interaction.guildId, client);
 
-    // Lưu lại để bot tự join khi restart
+    // Lưu lại để bot tự join khi restart / bị kick / mất kết nối
     setVoiceChannel(interaction.guildId, channel.id);
 
     await interaction.reply(
-      `✅ Đã vào **${channel.name}** và sẽ treo ở đây cho đến khi dùng \`/leave\`.\nBot sẽ tự join lại kênh này sau khi restart.`
+      `✅ Đã vào **${channel.name}** và sẽ treo ở đây cho đến khi dùng \`/leave\`.\nBot sẽ tự join lại rất nhanh nếu bị out hoặc restart.`
     );
   }
 };
