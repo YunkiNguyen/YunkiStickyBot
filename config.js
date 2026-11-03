@@ -1,10 +1,10 @@
 const config = {
-  botId: "1432015818451062804",
+  // Có thể đặt CLIENT_ID trong Secrets; mặc định dùng ID bot hiện tại.
+  botId: process.env.CLIENT_ID || "1432015818451062804",
 
-  // Có thể đặt GUILD_ID trong Replit Secrets để deploy slash commands
-  // trực tiếp vào server và cập nhật gần như ngay lập tức.
-  // Fallback là server Giáo Phái Fibi Chuppi của project.
-  guildId: process.env.GUILD_ID || process.env.DISCORD_GUILD_ID || "1407642009396842547",
+  // GUILD_ID là TUỲ CHỌN và chỉ nên dùng khi test trên 1 server.
+  // Để trống => deploy Global Commands (dùng được ở mọi server bot tham gia).
+  guildId: process.env.GUILD_ID || process.env.DISCORD_GUILD_ID || "",
 
   defaultChannelId: "",
 

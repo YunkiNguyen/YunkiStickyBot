@@ -2,5 +2,9 @@ node_modules/
 .env
 *.log
 
-# Runtime data
-data/*.json
+# Runtime data (JSON, file .tmp, file .corrupt-* backup) - giữ lại .gitkeep
+data/*
+!data/.gitkeep
+
+# Process lock - chỉ có ý nghĩa ở máy đang chạy
+.yunki-bot.lock
