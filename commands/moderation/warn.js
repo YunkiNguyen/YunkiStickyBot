@@ -1,6 +1,6 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits, MessageFlags
 } from "discord.js";
 
 import { addWarning } from "../../utils/warningsStore.js";
@@ -8,6 +8,7 @@ import { addWarning } from "../../utils/warningsStore.js";
 export default {
   data: new SlashCommandBuilder()
     .setName("warn")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .setDescription("Cảnh cáo một thành viên.")
     .addUserOption(option =>
       option
@@ -18,6 +19,7 @@ export default {
     .addStringOption(option =>
       option
         .setName("reason")
+        .setMaxLength(200)
         .setDescription("Lý do cảnh cáo.")
         .setRequired(true)
     ),
@@ -26,7 +28,7 @@ export default {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({
         content: "❌ Bạn không có quyền **Moderate Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -40,21 +42,21 @@ export default {
     if (!target) {
       return interaction.reply({
         content: "❌ Không tìm thấy thành viên.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.id === interaction.user.id) {
       return interaction.reply({
         content: "❌ Bạn không thể cảnh cáo chính mình.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.id === interaction.client.user.id) {
       return interaction.reply({
         content: "❌ Bot không thể tự cảnh cáo.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -64,7 +66,7 @@ export default {
     ) {
       return interaction.reply({
         content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bạn.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -90,7 +92,7 @@ export default {
 
       return interaction.reply({
         content: "❌ Không thể lưu cảnh cáo cho thành viên này.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   }

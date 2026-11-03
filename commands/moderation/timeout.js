@@ -1,11 +1,12 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits, MessageFlags
 } from "discord.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("timeout")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .setDescription("Timeout một thành viên.")
     .addUserOption(option =>
       option
@@ -24,6 +25,7 @@ export default {
     .addStringOption(option =>
       option
         .setName("reason")
+        .setMaxLength(400)
         .setDescription("Lý do timeout.")
         .setRequired(false)
     ),
@@ -32,7 +34,7 @@ export default {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({
         content: "❌ Bạn không có quyền **Moderate Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -41,7 +43,7 @@ export default {
     if (!botMember?.permissions.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({
         content: "❌ Yunki Bot không có quyền **Moderate Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -58,28 +60,28 @@ export default {
     if (!target) {
       return interaction.reply({
         content: "❌ Không tìm thấy thành viên.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.id === interaction.user.id) {
       return interaction.reply({
         content: "❌ Bạn không thể timeout chính mình.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.id === interaction.client.user.id) {
       return interaction.reply({
         content: "❌ Bot không thể timeout chính mình.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.id === interaction.guild.ownerId) {
       return interaction.reply({
         content: "❌ Không thể timeout Server Owner.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -89,14 +91,14 @@ export default {
     ) {
       return interaction.reply({
         content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bạn.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.roles.highest.position >= botMember.roles.highest.position) {
       return interaction.reply({
         content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bot.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -116,7 +118,7 @@ export default {
 
       return interaction.reply({
         content: "❌ Không thể timeout thành viên này.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   }

@@ -1,11 +1,12 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits, MessageFlags
 } from "discord.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("untimeout")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .setDescription("Gỡ timeout cho một thành viên.")
     .addUserOption(option =>
       option
@@ -18,7 +19,7 @@ export default {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({
         content: "❌ Bạn không có quyền **Moderate Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -27,7 +28,7 @@ export default {
     if (!botMember?.permissions.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({
         content: "❌ Yunki Bot không có quyền **Moderate Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -40,7 +41,7 @@ export default {
     if (!target) {
       return interaction.reply({
         content: "❌ Không tìm thấy thành viên.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -49,7 +50,7 @@ export default {
     ) {
       return interaction.reply({
         content: "❌ Bot không thể quản lý thành viên có role cao hơn hoặc bằng bot.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -67,7 +68,7 @@ export default {
 
       return interaction.reply({
         content: "❌ Không thể gỡ timeout cho thành viên này.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   }

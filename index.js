@@ -2,10 +2,12 @@ import {
   Client,
   Collection,
   GatewayIntentBits,
-  Events
+  Events,
+  MessageFlags
 } from "discord.js";
 
 import fs from "fs";
+import os from "os";
 import path from "path";
 import http from "http";
 import { fileURLToPath, pathToFileURL } from "url";
@@ -14,6 +16,8 @@ import {
   joinSavedVoiceChannel,
   scheduleFastRejoin
 } from "./utils/voiceConnection.js";
+import { loadVoice, getVoiceChannel } from "./utils/voiceStore.js";
+import { resumeGiveaways } from "./utils/giveawayService.js";
 
 // =====================================================
 // PATH
@@ -56,8 +60,10 @@ function acquireProcessLock() {
       const raw = fs.readFileSync(LOCK_FILE, "utf8");
       const oldLock = JSON.parse(raw);
 
+      const sameHost = oldLock?.host === os.hostname();
+
       if (oldLock && oldLock.pid && oldLock.pid !== process.pid) {
-        if (isProcessRunning(oldLock.pid)) {
+        if (sameHost && isProcessRunning(oldLock.pid)) {
           console.error("");
           console.error("========================================");
           console.error("       YUNKI BOT ALREADY RUNNING");
@@ -90,6 +96,7 @@ function acquireProcessLock() {
       JSON.stringify(
         {
           pid: process.pid,
+          host: os.hostname(),
           startedAt: new Date().toISOString()
         },
         null,
@@ -129,6 +136,16 @@ function releaseProcessLock() {
 
 acquireProcessLock();
 process.once("exit", releaseProcessLock);
+
+process.on("unhandledRejection", (reason) => {
+  console.error("UNHANDLED REJECTION:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("UNCAUGHT EXCEPTION:", error);
+  releaseProcessLock();
+  process.exit(1);
+});
 process.once("SIGINT", () => {
   console.log("\nSHUTTING DOWN YUNKI BOT...");
   releaseProcessLock();
@@ -176,13 +193,15 @@ healthServer.listen(PORT, "0.0.0.0", () => {
 // =====================================================
 
 const client = new Client({
+  // Bot chỉ dùng slash command + REST + voice nên không cần
+  // GuildMessages / MessageContent (privileged) / GuildMessageReactions.
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates
-  ]
+  ],
+  // Mặc định chỉ cho phép ping user; không bao giờ ping @everyone/@here/role
+  // từ nội dung do người dùng nhập. Nơi cần ping user khai báo allowedMentions riêng.
+  allowedMentions: { parse: ["users"], repliedUser: false }
 });
 
 client.commands = new Collection();
@@ -230,86 +249,18 @@ async function loadCommands(directory) {
   }
 }
 
-// =====================================================
-// GIVEAWAY SCHEDULER
-// =====================================================
-
-const MAX_TIMEOUT = 2147483647;
-const giveawayTimers = new Map();
-
-function clearGiveawayTimer(messageId) {
-  const timer = giveawayTimers.get(messageId);
-  if (timer) {
-    clearTimeout(timer);
-    giveawayTimers.delete(messageId);
-  }
-}
-
-async function scheduleGiveaway(messageId, endTime) {
-  clearGiveawayTimer(messageId);
-
-  const remaining = endTime - Date.now();
-
-  if (remaining <= 0) {
-    try {
-      const { endGiveaway } = await import("./commands/utility/giveaway.js");
-      await endGiveaway(client, messageId);
-    } catch (error) {
-      console.error(`FAILED TO END GIVEAWAY: ${messageId}`);
-      console.error(error);
-    }
-    return;
-  }
-
-  const delay = Math.min(remaining, MAX_TIMEOUT);
-  const timer = setTimeout(() => {
-    scheduleGiveaway(messageId, endTime);
-  }, delay);
-
-  giveawayTimers.set(messageId, timer);
-  console.log(
-    `SCHEDULED GIVEAWAY: ${messageId} | ${Math.ceil(remaining / 1000)}s remaining`
-  );
-}
-
-async function resumeGiveaways() {
-  try {
-    const { loadGiveaways } = await import("./utils/giveawayStore.js");
-    const { endGiveaway } = await import("./commands/utility/giveaway.js");
-
-    const giveaways = loadGiveaways();
-    const entries = Object.entries(giveaways);
-
-    console.log(`CHECKING GIVEAWAYS: ${entries.length}`);
-
-    for (const [messageId, giveaway] of entries) {
-      if (!giveaway || giveaway.ended === true) continue;
-
-      if (Number(giveaway.endTime) <= Date.now()) {
-        console.log(`AUTO END GIVEAWAY: ${messageId}`);
-        await endGiveaway(client, messageId);
-        continue;
-      }
-
-      await scheduleGiveaway(messageId, giveaway.endTime);
-      console.log(`RESUMED GIVEAWAY: ${messageId}`);
-    }
-  } catch (error) {
-    console.error("FAILED TO RESUME GIVEAWAYS", error);
-  }
-}
-
 async function resumeVoiceConnections() {
   try {
-    const { loadVoice } = await import("./utils/voiceStore.js");
-    const saved = loadVoice();
-    const entries = Object.entries(saved);
+    const entries = Object.entries(loadVoice());
 
     console.log(`CHECKING VOICE CHANNELS: ${entries.length}`);
 
-    for (const [guildId, channelId] of entries) {
-      await joinSavedVoiceChannel(client, guildId, channelId, "AUTO");
-    }
+    // Chạy song song để nhiều server không phải đợi nhau.
+    await Promise.allSettled(
+      entries.map(([guildId, channelId]) =>
+        joinSavedVoiceChannel(client, guildId, channelId, "AUTO")
+      )
+    );
   } catch (error) {
     console.error("FAILED TO RESUME VOICE CONNECTIONS", error);
   }
@@ -333,7 +284,7 @@ client.once(Events.ClientReady, async (readyClient) => {
   console.log("========================================");
   console.log("");
 
-  await resumeGiveaways();
+  await resumeGiveaways(client);
   await resumeVoiceConnections();
 });
 
@@ -347,15 +298,14 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     if (oldState.id !== client.user.id) return;
 
     if (oldState.channelId && !newState.channelId) {
-      const { getVoiceChannel } = await import("./utils/voiceStore.js");
       const savedChannelId = getVoiceChannel(oldState.guild.id);
 
       if (!savedChannelId) return;
 
       console.log(
-        `BOT DISCONNECTED FROM VOICE: ${oldState.guild.name} -> fast rejoin`
+        `BOT DISCONNECTED FROM VOICE: ${oldState.guild.name} -> rejoin`
       );
-      scheduleFastRejoin(oldState.guild.id, client, 300);
+      scheduleFastRejoin(oldState.guild.id, client);
     }
   } catch (error) {
     console.error("VOICE STATE UPDATE ERROR", error);
@@ -389,7 +339,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       await interaction.reply({
         content: "❌ Command này chưa được tải.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     } catch {}
     return;
@@ -409,9 +359,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     try {
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: errorMessage, ephemeral: true });
+        await interaction.followUp({ content: errorMessage, flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.reply({ content: errorMessage, ephemeral: true });
+        await interaction.reply({ content: errorMessage, flags: MessageFlags.Ephemeral });
       }
     } catch (replyError) {
       console.error("FAILED TO SEND ERROR RESPONSE");

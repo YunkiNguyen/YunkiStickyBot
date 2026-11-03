@@ -1,12 +1,14 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  MessageFlags
 } from "discord.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Ban một thành viên khỏi server.")
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+    .setDescription("Ban một thành viên khỏi server (kể cả người đã rời server).")
     .addUserOption(option =>
       option
         .setName("user")
@@ -16,6 +18,7 @@ export default {
     .addStringOption(option =>
       option
         .setName("reason")
+        .setMaxLength(400)
         .setDescription("Lý do ban.")
         .setRequired(false)
     ),
@@ -24,7 +27,7 @@ export default {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.BanMembers)) {
       return interaction.reply({
         content: "❌ Bạn không có quyền **Ban Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -33,7 +36,7 @@ export default {
     if (!botMember?.permissions.has(PermissionFlagsBits.BanMembers)) {
       return interaction.reply({
         content: "❌ Yunki Bot không có quyền **Ban Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -42,63 +45,59 @@ export default {
       interaction.options.getString("reason") ||
       "Không có lý do.";
 
+    if (user.id === interaction.user.id) {
+      return interaction.reply({
+        content: "❌ Bạn không thể ban chính mình.",
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (user.id === interaction.client.user.id) {
+      return interaction.reply({
+        content: "❌ Bot không thể ban chính mình.",
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (user.id === interaction.guild.ownerId) {
+      return interaction.reply({
+        content: "❌ Không thể ban Server Owner.",
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
     const target = await interaction.guild.members
       .fetch(user.id)
       .catch(() => null);
 
-    if (!target) {
-      return interaction.reply({
-        content: "❌ Không tìm thấy thành viên trong server.",
-        ephemeral: true
-      });
-    }
+    // Người đã rời server: vẫn ban được theo ID, không cần kiểm tra role.
+    if (target) {
+      if (
+        interaction.guild.ownerId !== interaction.user.id &&
+        target.roles.highest.position >= interaction.member.roles.highest.position
+      ) {
+        return interaction.reply({
+          content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bạn.",
+          flags: MessageFlags.Ephemeral
+        });
+      }
 
-    if (target.id === interaction.user.id) {
-      return interaction.reply({
-        content: "❌ Bạn không thể ban chính mình.",
-        ephemeral: true
-      });
-    }
-
-    if (target.id === interaction.client.user.id) {
-      return interaction.reply({
-        content: "❌ Bot không thể ban chính mình.",
-        ephemeral: true
-      });
-    }
-
-    if (target.id === interaction.guild.ownerId) {
-      return interaction.reply({
-        content: "❌ Không thể ban Server Owner.",
-        ephemeral: true
-      });
-    }
-
-    if (
-      interaction.guild.ownerId !== interaction.user.id &&
-      target.roles.highest.position >= interaction.member.roles.highest.position
-    ) {
-      return interaction.reply({
-        content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bạn.",
-        ephemeral: true
-      });
-    }
-
-    if (target.roles.highest.position >= botMember.roles.highest.position) {
-      return interaction.reply({
-        content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bot.",
-        ephemeral: true
-      });
+      if (target.roles.highest.position >= botMember.roles.highest.position) {
+        return interaction.reply({
+          content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bot.",
+          flags: MessageFlags.Ephemeral
+        });
+      }
     }
 
     try {
-      await target.ban({
+      await interaction.guild.members.ban(user.id, {
         reason: `${reason} | By ${interaction.user.tag}`
       });
 
       return interaction.reply({
         content:
-          `🔨 Đã ban **${target.user.tag}**.\n` +
+          `🔨 Đã ban **${user.tag}**${target ? "" : " (không còn trong server)"}.\n` +
           `> Lý do: ${reason}`
       });
     } catch (error) {
@@ -106,7 +105,7 @@ export default {
 
       return interaction.reply({
         content: "❌ Không thể ban thành viên này.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   }

@@ -39,11 +39,14 @@ YunkiBot/
 Tạo các Secret:
 
 - Key: `DISCORD_TOKEN` — Bot Token của bạn
-- Key: `GUILD_ID` — ID server Discord dùng để đăng ký Guild Commands
+- Key: `BOT_OWNER_ID` — User ID được phép dùng `/shutdown` (không đặt = lệnh bị khóa)
+- Key (tuỳ chọn): `DATA_DIR` — thư mục lưu dữ liệu bền vững (mặc định `./data`)
+- Key (tuỳ chọn): `GUILD_ID` — **chỉ dùng khi test 1 server**. Nếu đặt, lệnh chỉ xuất hiện ở server đó.
 
 **Không gửi Bot Token cho người khác và không đặt Token trong `config.js`.**
 
-`DISCORD_GUILD_ID` cũng được hỗ trợ như tên thay thế cho `GUILD_ID`.
+Muốn bot dùng được ở **mọi server**: **xóa** `GUILD_ID` / `DISCORD_GUILD_ID` khỏi Secrets rồi chạy `npm run deploy` (đăng ký Global Commands).
+Lần đầu chuyển từ Guild sang Global, chạy một lần với `CLEAR_GUILD_ID=<id server cũ> npm run deploy` để xóa lệnh cũ, tránh lệnh bị hiện trùng.
 
 ## 3. Điền ID
 
@@ -84,6 +87,7 @@ Bot cần tối thiểu các quyền phù hợp với command:
 - Moderate Members
 - Manage Messages
 - Manage Channels
+- Manage Roles (Manage Permissions) — cần cho `/lock` và `/unlock`
 - View Channels
 - Send Messages
 - Embed Links
@@ -93,8 +97,11 @@ Ngoài permission, role của bot phải nằm **cao hơn các member mà bot c�
 
 ## Lưu ý
 
-Warning được lưu trong `data/warnings.json` để không mất dữ liệu khi bot restart. File runtime JSON vẫn được giữ ngoài Git bởi `.gitignore`.
+Dữ liệu runtime (`warnings.json`, `giveaways.json`, `voice.json`, `locks.json`) nằm trong `DATA_DIR` (mặc định `./data`) và được giữ ngoài Git bởi `.gitignore`.
+**Hãy deploy bằng Reserved VM** (không dùng Autoscale) và để `DATA_DIR` trỏ tới nơi lưu trữ bền vững; nếu không, dữ liệu có thể mất khi redeploy.
 
-Giveaway cũng lưu dữ liệu trong `data/giveaways.json` và store đã có xử lý file JSON lỗi/corrupt an toàn hơn.
+Nếu một file JSON bị hỏng, bot **không ghi đè**: file được đổi tên thành `<file>.corrupt-<thời gian>` để bạn có thể khôi phục thủ công.
 
-Đây là bản rebuild sạch, không phụ thuộc `handlers/commandHandler.js` cũ.
+Voice: `@discordjs/voice` ≥ 0.19 (có DAVE) và Node.js ≥ 22.12 là bắt buộc để bot treo được trong voice channel thường (Discord yêu cầu DAVE từ 03/2026).
+
+Bot chỉ cần intent `Guilds` và `GuildVoiceStates` (không cần Message Content).

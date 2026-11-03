@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from "discord.js";
 
 function duration(seconds) {
   seconds = Math.floor(seconds);
@@ -21,6 +21,6 @@ export default {
         { name: "🏠 Servers", value: `${client.guilds.cache.size}`, inline: true }
       )
       .setColor("#4B79F6").setTimestamp();
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 };

@@ -1,6 +1,6 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits, MessageFlags
 } from "discord.js";
 
 export default {
@@ -17,20 +17,20 @@ export default {
       console.error("BOT_OWNER_ID chưa được cấu hình.");
       return interaction.reply({
         content: "❌ Bot chưa được cấu hình Owner ID.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (interaction.user.id !== ownerId) {
       return interaction.reply({
         content: "❌ Chỉ Bot Owner mới có thể sử dụng lệnh này.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     await interaction.reply({
       content: "🛑 Yunki Bot đang tắt...",
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
 
     console.log(

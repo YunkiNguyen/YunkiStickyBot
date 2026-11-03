@@ -1,11 +1,12 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits, MessageFlags
 } from "discord.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("kick")
+    .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
     .setDescription("Kick một thành viên khỏi server.")
     .addUserOption(option =>
       option
@@ -16,6 +17,7 @@ export default {
     .addStringOption(option =>
       option
         .setName("reason")
+        .setMaxLength(400)
         .setDescription("Lý do kick.")
         .setRequired(false)
     ),
@@ -24,7 +26,7 @@ export default {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.KickMembers)) {
       return interaction.reply({
         content: "❌ Bạn không có quyền **Kick Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -33,7 +35,7 @@ export default {
     if (!botMember?.permissions.has(PermissionFlagsBits.KickMembers)) {
       return interaction.reply({
         content: "❌ Yunki Bot không có quyền **Kick Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -49,28 +51,28 @@ export default {
     if (!target) {
       return interaction.reply({
         content: "❌ Không tìm thấy thành viên trong server.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.id === interaction.user.id) {
       return interaction.reply({
         content: "❌ Bạn không thể kick chính mình.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.id === interaction.client.user.id) {
       return interaction.reply({
         content: "❌ Bot không thể kick chính mình.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.id === interaction.guild.ownerId) {
       return interaction.reply({
         content: "❌ Không thể kick Server Owner.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -80,14 +82,14 @@ export default {
     ) {
       return interaction.reply({
         content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bạn.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
     if (target.roles.highest.position >= botMember.roles.highest.position) {
       return interaction.reply({
         content: "❌ Role của thành viên này cao hơn hoặc bằng role cao nhất của bot.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -106,7 +108,7 @@ export default {
 
       return interaction.reply({
         content: "❌ Không thể kick thành viên này.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   }

@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from "discord.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -37,8 +37,8 @@ export default {
           inline: true
         },
         {
-          name: "📌 Sticky",
-          value: "Hệ thống Sticky đang hoạt động.",
+          name: "🎉 Giveaway",
+          value: "Hệ thống Giveaway đang hoạt động.",
           inline: true
         },
         {
@@ -55,7 +55,7 @@ export default {
 
     return interaction.reply({
       embeds: [embed],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 };

@@ -4,12 +4,24 @@ import {
   VoiceConnectionStatus,
   entersState
 } from "@discordjs/voice";
-import { ChannelType } from "discord.js";
+import { ChannelType, PermissionFlagsBits } from "discord.js";
 import { getVoiceChannel, removeVoiceChannel } from "./voiceStore.js";
 
-// Tránh spam reconnect
-const rejoinLocks = new Map();
+const BASE_DELAY_MS = 300;
+const MAX_DELAY_MS = 60_000;
+const STABLE_AFTER_MS = 60_000;
+const READY_TIMEOUT_MS = 15_000;
+
+const rejoinLocks = new Set();
 const rejoinTimers = new Map();
+const rejoinAttempts = new Map();
+const stableTimers = new Map();
+
+// Backoff: 300ms, 600ms, 1.2s ... tối đa 60s. Chỉ reset khi kết nối ổn định 60s.
+function nextDelay(guildId) {
+  const attempts = rejoinAttempts.get(guildId) ?? 0;
+  return Math.min(BASE_DELAY_MS * 2 ** attempts, MAX_DELAY_MS);
+}
 
 function clearRejoinTimer(guildId) {
   const timer = rejoinTimers.get(guildId);
@@ -19,48 +31,85 @@ function clearRejoinTimer(guildId) {
   }
 }
 
+function clearStableTimer(guildId) {
+  const timer = stableTimers.get(guildId);
+  if (timer) {
+    clearTimeout(timer);
+    stableTimers.delete(guildId);
+  }
+}
+
+/** Huỷ mọi lịch rejoin của guild (dùng khi /leave). */
+export function cancelRejoin(guildId) {
+  clearRejoinTimer(guildId);
+  clearStableTimer(guildId);
+  rejoinAttempts.delete(guildId);
+}
+
 /**
- * Gắn listener để reconnect nhanh khi connection bị rớt.
+ * Huỷ connection mà KHÔNG kích hoạt auto-rejoin
+ * (listener "Destroyed" sẽ bỏ qua connection đã đánh dấu).
+ */
+export function destroyConnectionQuietly(connection) {
+  if (!connection) return;
+
+  connection.__yunkiQuietDestroy = true;
+
+  try {
+    connection.destroy();
+  } catch {
+    // đã bị destroy trước đó
+  }
+}
+
+/**
+ * Gắn listener để reconnect khi connection bị rớt.
  * Chỉ reconnect nếu kênh vẫn còn trong voiceStore (chưa /leave).
  */
 export function attachVoiceConnectionHandlers(connection, guildId, client) {
-  // Tránh gắn trùng listener
   if (connection.__yunkiHandlersAttached) return;
   connection.__yunkiHandlersAttached = true;
 
+  connection.on(VoiceConnectionStatus.Ready, () => {
+    clearStableTimer(guildId);
+
+    stableTimers.set(
+      guildId,
+      setTimeout(() => {
+        stableTimers.delete(guildId);
+        rejoinAttempts.delete(guildId);
+      }, STABLE_AFTER_MS)
+    );
+  });
+
   connection.on(VoiceConnectionStatus.Disconnected, async () => {
+    clearStableTimer(guildId);
+
     try {
-      // Thử recover nhanh trong 5s (Discord có thể chỉ lag tạm)
+      // Thử recover nhanh trong 5s (Discord có thể chỉ lag tạm / bot bị chuyển kênh)
       await Promise.race([
         entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
         entersState(connection, VoiceConnectionStatus.Connecting, 5_000)
       ]);
-      // Đã recover → không cần làm gì
       return;
     } catch {
-      // Thật sự disconnect
-      try {
-        connection.destroy();
-      } catch {}
+      destroyConnectionQuietly(connection);
 
-      const savedChannelId = getVoiceChannel(guildId);
-      if (!savedChannelId) {
-        // Đã /leave → không reconnect
-        return;
-      }
+      if (!getVoiceChannel(guildId)) return; // đã /leave
 
-      console.log(`VOICE DISCONNECTED: ${guildId} -> fast rejoin`);
-      scheduleFastRejoin(guildId, client, 300);
+      console.log(`VOICE DISCONNECTED: ${guildId} -> rejoin`);
+      scheduleFastRejoin(guildId, client);
     }
   });
 
   connection.on(VoiceConnectionStatus.Destroyed, () => {
-    const savedChannelId = getVoiceChannel(guildId);
-    if (!savedChannelId) return;
+    clearStableTimer(guildId);
 
-    // Có thể do kick / network drop
-    console.log(`VOICE DESTROYED: ${guildId} -> fast rejoin`);
-    scheduleFastRejoin(guildId, client, 300);
+    if (connection.__yunkiQuietDestroy) return;
+    if (!getVoiceChannel(guildId)) return;
+
+    console.log(`VOICE DESTROYED: ${guildId} -> rejoin`);
+    scheduleFastRejoin(guildId, client);
   });
 
   connection.on("error", (error) => {
@@ -68,7 +117,7 @@ export function attachVoiceConnectionHandlers(connection, guildId, client) {
   });
 }
 
-export function scheduleFastRejoin(guildId, client, delayMs = 300) {
+export function scheduleFastRejoin(guildId, client, delayMs = nextDelay(guildId)) {
   clearRejoinTimer(guildId);
 
   const timer = setTimeout(async () => {
@@ -77,7 +126,13 @@ export function scheduleFastRejoin(guildId, client, delayMs = 300) {
     const savedChannelId = getVoiceChannel(guildId);
     if (!savedChannelId) return;
 
-    await joinSavedVoiceChannel(client, guildId, savedChannelId, "FAST_REJOIN");
+    rejoinAttempts.set(guildId, (rejoinAttempts.get(guildId) ?? 0) + 1);
+
+    try {
+      await joinSavedVoiceChannel(client, guildId, savedChannelId, "REJOIN");
+    } catch (error) {
+      console.error(`REJOIN ERROR: ${guildId}`, error);
+    }
   }, delayMs);
 
   rejoinTimers.set(guildId, timer);
@@ -89,11 +144,11 @@ export async function joinSavedVoiceChannel(
   channelId,
   reason = "AUTO"
 ) {
-  if (rejoinLocks.get(guildId)) {
+  if (rejoinLocks.has(guildId)) {
     return false;
   }
 
-  rejoinLocks.set(guildId, true);
+  rejoinLocks.add(guildId);
 
   try {
     const guild = client.guilds.cache.get(guildId);
@@ -117,30 +172,36 @@ export async function joinSavedVoiceChannel(
     }
 
     const me = guild.members.me;
-    const permissions = channel.permissionsFor(me);
+    const permissions = me ? channel.permissionsFor(me) : null;
 
-    if (!permissions?.has(["Connect", "ViewChannel"])) {
+    if (
+      !permissions?.has([
+        PermissionFlagsBits.Connect,
+        PermissionFlagsBits.ViewChannel
+      ])
+    ) {
       console.log(`VOICE SKIP: Missing permissions in ${channel.name}`);
       return false;
     }
 
-    // Đã ở đúng kênh + connection còn sống
+    // Đã có connection còn sống tới đúng kênh -> giữ nguyên.
     const existing = getVoiceConnection(guildId);
+    const aliveStatuses = [
+      VoiceConnectionStatus.Signalling,
+      VoiceConnectionStatus.Connecting,
+      VoiceConnectionStatus.Ready
+    ];
+
     if (
-      me?.voice?.channelId === channel.id &&
       existing &&
-      existing.state.status !== VoiceConnectionStatus.Destroyed &&
-      existing.state.status !== VoiceConnectionStatus.Disconnected
+      existing.joinConfig?.channelId === channel.id &&
+      aliveStatuses.includes(existing.state.status)
     ) {
       attachVoiceConnectionHandlers(existing, guildId, client);
       return true;
     }
 
-    if (existing) {
-      try {
-        existing.destroy();
-      } catch {}
-    }
+    if (existing) destroyConnectionQuietly(existing);
 
     const connection = joinVoiceChannel({
       channelId: channel.id,
@@ -152,11 +213,20 @@ export async function joinSavedVoiceChannel(
 
     attachVoiceConnectionHandlers(connection, guildId, client);
 
-    // Chờ sẵn sàng tối đa 10s
     try {
-      await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
+      await entersState(connection, VoiceConnectionStatus.Ready, READY_TIMEOUT_MS);
     } catch {
-      console.log(`VOICE NOT READY IN TIME: ${channel.name}`);
+      console.log(
+        `VOICE NOT READY IN TIME: ${channel.name} (${guild.name}) -> sẽ thử lại với backoff`
+      );
+
+      destroyConnectionQuietly(connection);
+
+      if (getVoiceChannel(guildId)) {
+        scheduleFastRejoin(guildId, client);
+      }
+
+      return false;
     }
 
     console.log(`${reason} JOIN VOICE: ${channel.name} (${guild.name})`);
@@ -165,6 +235,6 @@ export async function joinSavedVoiceChannel(
     console.error(`FAILED TO JOIN VOICE: ${guildId}`, error);
     return false;
   } finally {
-    rejoinLocks.set(guildId, false);
+    rejoinLocks.delete(guildId);
   }
 }

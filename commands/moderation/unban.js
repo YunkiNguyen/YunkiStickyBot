@@ -1,11 +1,12 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits, MessageFlags
 } from "discord.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("unban")
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
     .setDescription("Gỡ ban một User ID.")
     .addStringOption(option =>
       option
@@ -16,6 +17,7 @@ export default {
     .addStringOption(option =>
       option
         .setName("reason")
+        .setMaxLength(400)
         .setDescription("Lý do unban.")
         .setRequired(false)
     ),
@@ -24,7 +26,7 @@ export default {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.BanMembers)) {
       return interaction.reply({
         content: "❌ Bạn không có quyền **Ban Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -33,7 +35,7 @@ export default {
     if (!botMember?.permissions.has(PermissionFlagsBits.BanMembers)) {
       return interaction.reply({
         content: "❌ Yunki Bot không có quyền **Ban Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -47,7 +49,7 @@ export default {
     if (!/^\d{17,20}$/.test(userId)) {
       return interaction.reply({
         content: "❌ User ID không hợp lệ.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -68,7 +70,7 @@ export default {
       return interaction.reply({
         content:
           "❌ Không tìm thấy user trong danh sách ban hoặc không thể unban.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   }

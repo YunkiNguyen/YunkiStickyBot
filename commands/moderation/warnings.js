@@ -1,7 +1,7 @@
 import {
   SlashCommandBuilder,
   EmbedBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits, MessageFlags
 } from "discord.js";
 
 import { getUserWarnings } from "../../utils/warningsStore.js";
@@ -9,6 +9,7 @@ import { getUserWarnings } from "../../utils/warningsStore.js";
 export default {
   data: new SlashCommandBuilder()
     .setName("warnings")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .setDescription("Xem danh sách cảnh cáo.")
     .addUserOption(option =>
       option
@@ -21,7 +22,7 @@ export default {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.ModerateMembers)) {
       return interaction.reply({
         content: "❌ Bạn không có quyền **Moderate Members**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -37,15 +38,19 @@ export default {
     if (!warnings.length) {
       return interaction.reply({
         content: `📋 **${user.username}** hiện không có cảnh cáo.`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
-    const list = warnings
-      .slice(-10)
+    const shown = warnings.slice(-10);
+    const offset = warnings.length - shown.length;
+
+    const list = shown
       .map((warning, index) => {
+        const reason = String(warning.reason ?? "").slice(0, 200);
+
         return (
-          `**${index + 1}.** ${warning.reason}\n` +
+          `**${offset + index + 1}.** ${reason}\n` +
           `> Moderator: <@${warning.moderator}> • ` +
           `<t:${Math.floor(warning.timestamp / 1000)}:R>`
         );
@@ -66,7 +71,7 @@ export default {
 
     return interaction.reply({
       embeds: [embed],
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 };
