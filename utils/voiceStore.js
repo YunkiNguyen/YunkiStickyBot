@@ -1,47 +1,20 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { dataFile, readJsonObject, writeJsonObject } from "./jsonStore.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const FILE = path.join(__dirname, "../data/voice.json");
-
-function init() {
-  if (!fs.existsSync(FILE)) {
-    fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    fs.writeFileSync(FILE, "{}", "utf8");
-  }
-}
+const FILE = dataFile("voice.json");
 
 export function loadVoice() {
-  init();
-
-  try {
-    const raw = fs.readFileSync(FILE, "utf8").trim();
-    if (!raw) return {};
-
-    const data = JSON.parse(raw);
-    return data && typeof data === "object" && !Array.isArray(data)
-      ? data
-      : {};
-  } catch (error) {
-    console.error("[VOICE STORE] Không thể đọc voice.json:", error);
-    return {};
-  }
+  return readJsonObject(FILE, "VOICE STORE");
 }
 
 export function saveVoice(data) {
-  init();
-
-  const tempFile = `${FILE}.tmp`;
-  fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), "utf8");
-  fs.renameSync(tempFile, FILE);
+  writeJsonObject(FILE, data);
 }
 
 export function getVoiceChannel(guildId) {
+  if (!guildId) return null;
+
   const data = loadVoice();
-  return data[guildId] || null;
+  return Object.hasOwn(data, guildId) ? data[guildId] || null : null;
 }
 
 export function setVoiceChannel(guildId, channelId) {
@@ -51,7 +24,11 @@ export function setVoiceChannel(guildId, channelId) {
 }
 
 export function removeVoiceChannel(guildId) {
+  if (!guildId) return;
+
   const data = loadVoice();
+  if (!Object.hasOwn(data, guildId)) return;
+
   delete data[guildId];
   saveVoice(data);
 }

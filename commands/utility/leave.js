@@ -1,9 +1,14 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  MessageFlags
 } from "discord.js";
 import { getVoiceConnection } from "@discordjs/voice";
 import { removeVoiceChannel } from "../../utils/voiceStore.js";
+import {
+  cancelRejoin,
+  destroyConnectionQuietly
+} from "../../utils/voiceConnection.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -12,20 +17,20 @@ export default {
     .setDefaultMemberPermissions(PermissionFlagsBits.MoveMembers),
 
   async execute(interaction) {
+    // Xoá dữ liệu + huỷ lịch rejoin TRƯỚC khi destroy để không bị auto-rejoin.
+    cancelRejoin(interaction.guildId);
+    removeVoiceChannel(interaction.guildId);
+
     const connection = getVoiceConnection(interaction.guildId);
 
     if (!connection) {
-      // Vẫn xóa dữ liệu đã lưu phòng trường hợp bot offline trước đó
-      removeVoiceChannel(interaction.guildId);
-
       return interaction.reply({
         content: "❌ Bot hiện không ở trong kênh voice nào cả.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
-    connection.destroy();
-    removeVoiceChannel(interaction.guildId);
+    destroyConnectionQuietly(connection);
 
     await interaction.reply("✅ Đã kick bot ra khỏi voice. Sẽ không tự join lại nữa.");
   }

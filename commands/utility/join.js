@@ -1,14 +1,11 @@
 import {
   SlashCommandBuilder,
   ChannelType,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  MessageFlags
 } from "discord.js";
-import {
-  joinVoiceChannel,
-  getVoiceConnection
-} from "@discordjs/voice";
 import { setVoiceChannel } from "../../utils/voiceStore.js";
-import { attachVoiceConnectionHandlers } from "../../utils/voiceConnection.js";
+import { joinSavedVoiceChannel } from "../../utils/voiceConnection.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -24,50 +21,54 @@ export default {
     .setDefaultMemberPermissions(PermissionFlagsBits.MoveMembers),
 
   async execute(interaction, client) {
-    const member = interaction.member;
     let channel = interaction.options.getChannel("channel");
 
     if (!channel) {
-      channel = member.voice?.channel;
+      channel = interaction.member?.voice?.channel;
     }
 
     if (!channel) {
       return interaction.reply({
         content: "❌ Bạn phải ở trong voice hoặc chỉ định kênh voice!",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
-    const permissions = channel.permissionsFor(interaction.guild.members.me);
-    if (!permissions.has(["Connect", "ViewChannel"])) {
+    const me = interaction.guild.members.me;
+    const permissions = me ? channel.permissionsFor(me) : null;
+
+    if (
+      !permissions?.has([
+        PermissionFlagsBits.Connect,
+        PermissionFlagsBits.ViewChannel
+      ])
+    ) {
       return interaction.reply({
         content: "❌ Bot không có quyền **Connect** vào kênh này!",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
-    const existing = getVoiceConnection(interaction.guildId);
-    if (existing) {
-      try {
-        existing.destroy();
-      } catch {}
-    }
+    await interaction.deferReply();
 
-    const connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator,
-      selfDeaf: true,
-      selfMute: true
-    });
-
-    attachVoiceConnectionHandlers(connection, interaction.guildId, client);
-
-    // Lưu lại để bot tự join khi restart / bị kick / mất kết nối
+    // Lưu trước: các listener rejoin luôn đọc kênh mới nhất.
     setVoiceChannel(interaction.guildId, channel.id);
 
-    await interaction.reply(
-      `✅ Đã vào **${channel.name}** và sẽ treo ở đây cho đến khi dùng \`/leave\`.\nBot sẽ tự join lại rất nhanh nếu bị out hoặc restart.`
+    const ok = await joinSavedVoiceChannel(
+      client,
+      interaction.guildId,
+      channel.id,
+      "MANUAL"
+    );
+
+    if (!ok) {
+      return interaction.editReply(
+        `⚠️ Chưa vào được **${channel.name}** ngay (có thể do quyền, kênh đầy hoặc Discord chậm). Bot sẽ tự thử lại; xem log nếu vẫn không được.`
+      );
+    }
+
+    return interaction.editReply(
+      `✅ Đã vào **${channel.name}** và sẽ treo ở đây cho đến khi dùng \`/leave\`.\nBot sẽ tự join lại nếu bị out hoặc restart.`
     );
   }
 };
