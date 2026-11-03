@@ -17,10 +17,14 @@ if (!token) {
   process.exit(1);
 }
 
-if (!config.botId || config.botId === "DAN_ID_BOT_VAO_DAY") {
-  console.error("❌ Hãy điền botId trong config.js.");
+if (!config.botId) {
+  console.error("❌ Hãy điền botId trong config.js hoặc CLIENT_ID trong Secrets.");
   process.exit(1);
 }
+
+// Những lệnh dùng được trong DM với bot. Mọi lệnh khác chỉ dùng trong server
+// (các lệnh đó đọc interaction.guild nên sẽ lỗi nếu gọi từ DM).
+const DM_OK = new Set(["ping", "status", "help", "config"]);
 
 const commands = [];
 
@@ -38,7 +42,13 @@ for (const folder of ["moderation", "utility"]) {
     ).default;
 
     if (command?.data) {
-      commands.push(command.data.toJSON());
+      const json = command.data.toJSON();
+
+      if (!DM_OK.has(json.name)) {
+        json.contexts = [0]; // 0 = Guild
+      }
+
+      commands.push(json);
     }
   }
 }
@@ -48,33 +58,44 @@ const rest = new REST({ version: "10" }).setToken(token);
 console.log(`📦 Tổng số commands: ${commands.length}`);
 console.log("🚀 Đang đăng ký Slash Commands...");
 
-if (config.guildId && config.guildId !== "DAN_ID_SERVER_VAO_DAY") {
-  // Xóa toàn bộ Global Commands cũ.
-  // Nếu trước đây bot từng deploy Global Commands,
-  // Discord sẽ giữ chúng và có thể hiển thị command bị trùng
-  // với Guild Commands.
-  console.log("🧹 Đang xóa Global Commands cũ...");
+try {
+  // Dọn lệnh cũ của một guild (ví dụ server test cũ) để không bị trùng lệnh
+  // với Global Commands. Đặt CLEAR_GUILD_ID=<id> khi chạy deploy một lần.
+  const clearGuildId = process.env.CLEAR_GUILD_ID;
 
-  await rest.put(
-    Routes.applicationCommands(config.botId),
-    { body: [] }
-  );
+  if (clearGuildId && clearGuildId !== config.guildId) {
+    console.log(`🧹 Đang xóa Guild Commands cũ của ${clearGuildId}...`);
+    await rest.put(
+      Routes.applicationGuildCommands(config.botId, clearGuildId),
+      { body: [] }
+    );
+  }
 
-  console.log("✅ Đã xóa Global Commands cũ.");
+  if (config.guildId) {
+    // Chế độ TEST: chỉ đăng ký cho một server.
+    await rest.put(
+      Routes.applicationGuildCommands(config.botId, config.guildId),
+      { body: commands }
+    );
 
-  // Đăng ký lại toàn bộ command vào đúng server.
-  await rest.put(
-    Routes.applicationGuildCommands(config.botId, config.guildId),
-    { body: commands }
-  );
+    console.log(`✅ Đăng ký Guild Commands thành công (Guild ID: ${config.guildId}).`);
+    console.log("⚠️ Các server khác sẽ KHÔNG có lệnh. Bỏ GUILD_ID để deploy Global.");
 
-  console.log("✅ Đăng ký Guild Commands thành công.");
-  console.log(`🏠 Guild ID: ${config.guildId}`);
-} else {
-  await rest.put(
-    Routes.applicationCommands(config.botId),
-    { body: commands }
-  );
+    // Chỉ xóa Global khi được yêu cầu rõ ràng (CLEAR_GLOBAL_COMMANDS=1).
+    if (process.env.CLEAR_GLOBAL_COMMANDS === "1") {
+      await rest.put(Routes.applicationCommands(config.botId), { body: [] });
+      console.log("🧹 Đã xóa Global Commands.");
+    }
+  } else {
+    await rest.put(
+      Routes.applicationCommands(config.botId),
+      { body: commands }
+    );
 
-  console.log("✅ Đăng ký Global Commands thành công.");
+    console.log("✅ Đăng ký Global Commands thành công (mọi server).");
+    console.log("ℹ️ Global Commands có thể mất vài phút để cập nhật.");
+  }
+} catch (error) {
+  console.error("❌ Đăng ký command thất bại:", error);
+  process.exit(1);
 }
