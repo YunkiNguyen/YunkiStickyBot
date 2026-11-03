@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from "discord.js";
+import { brandFooter } from "../../config.js";
 
 export default {
   data: new SlashCommandBuilder().setName("help").setDescription("Xem danh sách lệnh Yunki Bot."),
@@ -9,7 +10,7 @@ export default {
       .addFields(
         {
           name: "🛡️ Moderation",
-          value: "`/ban` `/unban` `/kick` `/timeout` `/untimeout`\n`/warn` `/warnings` `/clear` `/lock` `/unlock` `/slowmode`"
+          value: "`/ban` `/unban` `/kick` `/timeout` `/untimeout`\n`/warn` `/unwarn` `/warnings` `/clear` `/lock` `/unlock` `/slowmode`"
         },
         {
           name: "🎉 Giveaway",
@@ -21,11 +22,11 @@ export default {
         },
         {
           name: "🔧 Tiện ích",
-          value: "`/ping` `/status` `/config` `/userinfo` `/serverinfo` `/help`"
+          value: "`/ping` `/status` `/config` `/userinfo` `/serverinfo` `/help`\n`/shutdown` (chỉ owner)"
         }
       )
       .setColor("#5865F2")
-      .setFooter({ text: "Yunki Bot • Giáo Phái Phoebe" })
+      .setFooter({ text: brandFooter() })
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });

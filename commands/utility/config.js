@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from "discord.js";
+import config, { brandFooter } from "../../config.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -37,6 +38,11 @@ export default {
           inline: true
         },
         {
+          name: "🏷️ Server",
+          value: config.serverName,
+          inline: false
+        },
+        {
           name: "🎉 Giveaway",
           value: "Hệ thống Giveaway đang hoạt động.",
           inline: true
@@ -49,7 +55,7 @@ export default {
       )
       .setColor("#5865F2")
       .setFooter({
-        text: "Yunki Bot • Giáo Phái Phoebe"
+        text: brandFooter()
       })
       .setTimestamp();
 

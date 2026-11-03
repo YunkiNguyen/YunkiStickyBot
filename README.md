@@ -1,33 +1,27 @@
 # Yunki Bot — Replit
 
+Phiên bản `2.2.0`. Bot Discord (slash commands, moderation, giveaway, voice).
+
 ## 1. Cấu trúc
 
 ```text
 YunkiBot/
 ├─ commands/
 │  ├─ moderation/
-│  │  ├─ ban.js
-│  │  ├─ clear.js
-│  │  ├─ kick.js
-│  │  ├─ lock.js
-│  │  ├─ slowmode.js
-│  │  ├─ timeout.js
-│  │  ├─ unban.js
-│  │  ├─ unlock.js
-│  │  ├─ untimeout.js
-│  │  ├─ warn.js
-│  │  └─ warnings.js
+│  │  ├─ ban.js unban.js kick.js timeout.js untimeout.js
+│  │  ├─ warn.js unwarn.js warnings.js
+│  │  └─ clear.js lock.js unlock.js slowmode.js
 │  └─ utility/
-│     ├─ config.js
-│     ├─ help.js
-│     ├─ ping.js
-│     ├─ serverinfo.js
-│     ├─ status.js
-│     └─ userinfo.js
+│     ├─ giveaway.js join.js leave.js
+│     ├─ ping.js status.js config.js help.js
+│     ├─ userinfo.js serverinfo.js shutdown.js
 ├─ handlers/
 │  └─ moderation.js
-├─ data/
-│  └─ warnings.json
+├─ utils/
+│  ├─ giveawayService.js giveawayStore.js
+│  ├─ warningsStore.js voiceStore.js voiceConnection.js
+│  ├─ lockStore.js jsonStore.js duration.js health.js
+│  └─ processLock.js
 ├─ config.js
 ├─ deploy-commands.js
 ├─ index.js
@@ -36,72 +30,63 @@ YunkiBot/
 
 ## 2. Replit Secrets
 
-Tạo các Secret:
+- `DISCORD_TOKEN` — token bot. Không gửi cho người khác, không ghi vào `config.js`.
+- `BOT_OWNER_ID` — user ID được dùng `/shutdown`. Không đặt thì lệnh bị khóa.
+- `DATA_DIR` (nên đặt) — thư mục JSON bền. Mặc định `./data`.
+- `CLIENT_ID` (tuỳ chọn) — ID application. Không đặt thì dùng `botId` trong `config.js`.
+- `GUILD_ID` (tuỳ chọn) — **chỉ khi test 1 server**. Nếu đặt, lệnh chỉ hiện ở server đó.
 
-- Key: `DISCORD_TOKEN` — Bot Token của bạn
-- Key: `BOT_OWNER_ID` — User ID được phép dùng `/shutdown` (không đặt = lệnh bị khóa)
-- Key (tuỳ chọn): `DATA_DIR` — thư mục lưu dữ liệu bền vững (mặc định `./data`)
-- Key (tuỳ chọn): `GUILD_ID` — **chỉ dùng khi test 1 server**. Nếu đặt, lệnh chỉ xuất hiện ở server đó.
+Muốn bot dùng được ở **mọi server**: xóa `GUILD_ID` / `DISCORD_GUILD_ID` rồi chạy `npm run deploy`.
+Lần đầu chuyển từ Guild sang Global, chạy một lần `CLEAR_GUILD_ID=<id server cũ> npm run deploy` để xóa lệnh cũ, tránh lệnh bị trùng.
 
-**Không gửi Bot Token cho người khác và không đặt Token trong `config.js`.**
+## 3. Chạy
 
-Muốn bot dùng được ở **mọi server**: **xóa** `GUILD_ID` / `DISCORD_GUILD_ID` khỏi Secrets rồi chạy `npm run deploy` (đăng ký Global Commands).
-Lần đầu chuyển từ Guild sang Global, chạy một lần với `CLEAR_GUILD_ID=<id server cũ> npm run deploy` để xóa lệnh cũ, tránh lệnh bị hiện trùng.
-
-## 3. Điền ID
-
-`config.js` lấy các giá trị sau:
-
-- `botId` — ID bot
-- `GUILD_ID` / `DISCORD_GUILD_ID` — ID server
-- `defaultChannelId` — kênh mặc định nếu command cần dùng
-
-`defaultChannelId` hiện chỉ để lưu cấu hình; các command không bắt buộc phải dùng nó.
-
-## 4. Cài package
+Cần Node.js `>= 22.12`.
 
 ```bash
 npm install
-```
-
-## 5. Đăng ký Slash Commands
-
-```bash
 npm run deploy
-```
-
-Khi có `GUILD_ID`, command sẽ được đăng ký riêng cho server và thường cập nhật nhanh hơn Global Commands.
-
-## 6. Chạy bot
-
-```bash
 npm start
 ```
 
-## 7. Quyền Discord
+Sau khi kéo bản này, chạy lại `npm run deploy` để Discord nhận lệnh mới `/unwarn`.
 
-Bot cần tối thiểu các quyền phù hợp với command:
+## 4. Publish trên Replit
 
-- Ban Members
-- Kick Members
-- Moderate Members
-- Manage Messages
-- Manage Channels
-- Manage Roles (Manage Permissions) — cần cho `/lock` và `/unlock`
-- View Channels
-- Send Messages
-- Embed Links
-- Read Message History
+Bot phải **luôn online** và giữ file JSON. Trong Publishing chọn **Reserved VM**, không dùng Autoscale.
 
-Ngoài permission, role của bot phải nằm **cao hơn các member mà bot cần moderate**.
+Autoscale ngủ khi không có request HTTP và có thể chạy nhiều bản — bot sẽ rớt gateway, mất giveaway / cảnh cáo / voice.
 
-## Lưu ý
+File `.replit` đã ghi `deploymentTarget = "vm"`. Nếu app đang publish kiểu Autoscale, vào **Publishing → Adjust settings** và đổi sang **Reserved VM**, rồi publish lại. Sửa file không tự đổi bản đang chạy.
 
-Dữ liệu runtime (`warnings.json`, `giveaways.json`, `voice.json`, `locks.json`) nằm trong `DATA_DIR` (mặc định `./data`) và được giữ ngoài Git bởi `.gitignore`.
-**Hãy deploy bằng Reserved VM** (không dùng Autoscale) và để `DATA_DIR` trỏ tới nơi lưu trữ bền vững; nếu không, dữ liệu có thể mất khi redeploy.
+Mỗi lần publish lại, đĩa của deployment có thể bị thay. Hãy trỏ `DATA_DIR` tới chỗ lưu bền nếu Replit có volume. Khi bot khởi động mà thiếu `DATA_DIR`, log sẽ cảnh báo.
 
-Nếu một file JSON bị hỏng, bot **không ghi đè**: file được đổi tên thành `<file>.corrupt-<thời gian>` để bạn có thể khôi phục thủ công.
+### Health
 
-Voice: `@discordjs/voice` ≥ 0.19 (có DAVE) và Node.js ≥ 22.12 là bắt buộc để bot treo được trong voice channel thường (Discord yêu cầu DAVE từ 03/2026).
+| Đường dẫn | Ý nghĩa |
+| --- | --- |
+| `/` `/healthz` `/ready` | `200` chỉ khi Discord đã login. Đang khởi động hoặc mất kết nối: `503`. |
+| `/live` | `200` khi process còn sống, kể cả lúc Discord chưa sẵn sàng. |
 
-Bot chỉ cần intent `Guilds` và `GuildVoiceStates` (không cần Message Content).
+## 5. Quyền Discord
+
+- Ban Members, Kick Members, Moderate Members
+- Manage Messages, Manage Channels, Manage Roles (cho `/lock` `/unlock`)
+- View Channels, Send Messages, Embed Links, Read Message History, Add Reactions
+- Connect (voice)
+
+Role của bot phải cao hơn member mà bot cần moderate.
+
+## 6. Dữ liệu
+
+`warnings.json`, `giveaways.json`, `voice.json`, `locks.json` nằm trong `DATA_DIR` và bị `.gitignore` loại. File JSON hỏng được đổi tên thành `<file>.corrupt-<thời gian>`, không bị ghi đè.
+
+`/unwarn` gỡ cảnh cáo mới nhất (`count`, mặc định 1) hoặc toàn bộ (`all: true`).
+
+Voice: `@discordjs/voice` 0.19 (có DAVE) và Node `>= 22.12`. Không nâng `sodium-native` lên bản 5 nếu voice đang chạy ổn — bản 4.3.x là bản đi cùng voice hiện tại.
+
+Bot chỉ cần intent `Guilds` và `GuildVoiceStates`.
+
+## 7. Tên hiển thị
+
+Footer embed lấy từ `config.brand` (`Giáo Phái Phoebe`). Tên đầy đủ của server là `config.serverName` và hiện trong `/config`.

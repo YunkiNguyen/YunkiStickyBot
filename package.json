@@ -1,6 +1,6 @@
 {
   "name": "yunki-bot",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "main": "index.js",
   "engines": {
@@ -8,7 +8,9 @@
   },
   "scripts": {
     "start": "node index.js",
-    "deploy": "node deploy-commands.js"
+    "deploy": "node deploy-commands.js",
+    "test": "node --test",
+    "check": "node scripts/check-syntax.mjs"
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.2",

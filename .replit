@@ -6,7 +6,7 @@ modules = ["nodejs-22"]
 expertMode = true
 
 [deployment]
-deploymentTarget = "autoscale"
+deploymentTarget = "vm"
 run = ["npm", "start"]
 
 [[ports]]

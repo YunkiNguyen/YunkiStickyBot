@@ -23,6 +23,27 @@ export function getUserWarnings(guildId, userId) {
     : [];
 }
 
+export function removeWarnings(guildId, userId, count) {
+  const data = loadWarnings();
+  const guildData = data[guildId];
+
+  if (!guildData || typeof guildData !== "object" || !Array.isArray(guildData[userId])) {
+    return { removed: [], remaining: [] };
+  }
+
+  const list = guildData[userId];
+  const n = count === Infinity ? list.length : Math.min(Math.max(Number(count) || 0, 0), list.length);
+  const removed = n > 0 ? list.splice(list.length - n, n) : [];
+
+  if (list.length === 0) {
+    delete guildData[userId];
+    if (Object.keys(guildData).length === 0) delete data[guildId];
+  }
+
+  saveWarnings(data);
+  return { removed, remaining: list };
+}
+
 export function addWarning(guildId, userId, warning) {
   const data = loadWarnings();
 

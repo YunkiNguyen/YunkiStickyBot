@@ -19,6 +19,7 @@ import {
   scheduleGiveaway,
   fetchReactionUserIds
 } from "../../utils/giveawayService.js";
+import { parseDuration } from "../../utils/duration.js";
 
 const MAX_DURATION_MS = 365 * 24 * 60 * 60 * 1000;
 const MIN_DURATION_MS = 10_000;
@@ -37,28 +38,6 @@ function markInteraction(id) {
   }
 
   return true;
-}
-
-const UNIT_MS = {
-  s: 1000,
-  m: 60 * 1000,
-  h: 60 * 60 * 1000,
-  d: 24 * 60 * 60 * 1000
-};
-
-// Hỗ trợ "90s", "10m", "1h", "7d" và dạng ghép như "1h30m".
-function parseDuration(value) {
-  if (!value) return null;
-
-  const text = value.trim().toLowerCase();
-  if (!/^(\d+[smhd])+$/.test(text)) return null;
-
-  let total = 0;
-  for (const match of text.matchAll(/(\d+)([smhd])/g)) {
-    total += Number(match[1]) * UNIT_MS[match[2]];
-  }
-
-  return Number.isSafeInteger(total) && total > 0 ? total : null;
 }
 
 function belongsToGuild(giveaway, guildId) {

@@ -12,12 +12,12 @@ import path from "path";
 import http from "http";
 import { fileURLToPath, pathToFileURL } from "url";
 
-import {
-  joinSavedVoiceChannel,
-  scheduleFastRejoin
-} from "./utils/voiceConnection.js";
+import { joinSavedVoiceChannel, scheduleFastRejoin } from "./utils/voiceConnection.js";
 import { loadVoice, getVoiceChannel } from "./utils/voiceStore.js";
 import { resumeGiveaways } from "./utils/giveawayService.js";
+import { DATA_DIR } from "./utils/jsonStore.js";
+import { describeHealth, describeLiveness } from "./utils/health.js";
+import { cmdlineLooksLikeBot, readProcessCmdline } from "./utils/processLock.js";
 
 // =====================================================
 // PATH
@@ -54,6 +54,15 @@ function isProcessRunning(pid) {
   }
 }
 
+function isOurBotProcess(pid) {
+  if (!isProcessRunning(pid)) return false;
+
+  const cmdline = readProcessCmdline(pid);
+  // Không đọc được /proc: giữ hành vi cũ (PID còn sống thì coi là đang chạy).
+  if (cmdline == null) return true;
+  return cmdlineLooksLikeBot(cmdline);
+}
+
 function acquireProcessLock() {
   if (fs.existsSync(LOCK_FILE)) {
     try {
@@ -63,7 +72,7 @@ function acquireProcessLock() {
       const sameHost = oldLock?.host === os.hostname();
 
       if (oldLock && oldLock.pid && oldLock.pid !== process.pid) {
-        if (sameHost && isProcessRunning(oldLock.pid)) {
+        if (sameHost && isOurBotProcess(oldLock.pid)) {
           console.error("");
           console.error("========================================");
           console.error("       YUNKI BOT ALREADY RUNNING");
@@ -137,6 +146,18 @@ function releaseProcessLock() {
 acquireProcessLock();
 process.once("exit", releaseProcessLock);
 
+if (!process.env.DATA_DIR) {
+  console.warn("");
+  console.warn("CẢNH BÁO: chưa đặt DATA_DIR.");
+  console.warn(`Dữ liệu đang nằm ở ${DATA_DIR} và có thể mất khi publish lại.`);
+  console.warn("Hãy chạy Reserved VM (không Autoscale) và trỏ DATA_DIR tới ổ bền.");
+  console.warn("");
+} else {
+  console.log(`DATA DIR: ${DATA_DIR}`);
+}
+
+let discordReady = false;
+
 process.on("unhandledRejection", (reason) => {
   console.error("UNHANDLED REJECTION:", reason);
 });
@@ -162,11 +183,23 @@ process.once("SIGTERM", () => {
 // =====================================================
 
 const healthServer = http.createServer((req, res) => {
-  if (req.url === "/" || req.url === "/healthz") {
-    res.writeHead(200, {
+  const url = req.url?.split("?")[0];
+
+  if (url === "/live") {
+    const live = describeLiveness();
+    res.writeHead(live.statusCode, {
       "Content-Type": "text/plain; charset=utf-8"
     });
-    res.end("Yunki Bot is online");
+    res.end(live.body);
+    return;
+  }
+
+  if (url === "/" || url === "/healthz" || url === "/ready") {
+    const health = describeHealth(discordReady);
+    res.writeHead(health.statusCode, {
+      "Content-Type": "text/plain; charset=utf-8"
+    });
+    res.end(health.body);
     return;
   }
 
@@ -271,6 +304,7 @@ async function resumeVoiceConnections() {
 // =====================================================
 
 client.once(Events.ClientReady, async (readyClient) => {
+  discordReady = true;
   console.log("");
   console.log("========================================");
   console.log("          YUNKI BOT ONLINE");
@@ -286,6 +320,19 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   await resumeGiveaways(client);
   await resumeVoiceConnections();
+});
+
+client.on(Events.ShardReady, () => {
+  discordReady = true;
+});
+
+client.on(Events.ShardResume, () => {
+  discordReady = true;
+});
+
+client.on(Events.ShardDisconnect, () => {
+  discordReady = false;
+  console.warn("DISCORD SHARD DISCONNECTED — /healthz sẽ trả 503 cho đến khi kết nối lại.");
 });
 
 // =====================================================

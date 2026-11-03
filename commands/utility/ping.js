@@ -2,6 +2,7 @@ import {
   SlashCommandBuilder,
   EmbedBuilder
 } from "discord.js";
+import { brandFooter } from "../../config.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -113,8 +114,7 @@ export default {
         )
         .setColor("#57F287")
         .setFooter({
-          text:
-            "Yunki Bot • Giáo Phái Phoebe"
+          text: brandFooter()
         })
         .setTimestamp();
 
