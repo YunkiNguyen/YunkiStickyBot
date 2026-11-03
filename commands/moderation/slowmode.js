@@ -1,11 +1,12 @@
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits, MessageFlags
 } from "discord.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("slowmode")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
     .setDescription("Thiết lập slowmode cho kênh.")
     .addIntegerOption(option =>
       option
@@ -20,7 +21,7 @@ export default {
     if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageChannels)) {
       return interaction.reply({
         content: "❌ Bạn không có quyền **Manage Channels**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -29,7 +30,7 @@ export default {
     if (!botMember?.permissions.has(PermissionFlagsBits.ManageChannels)) {
       return interaction.reply({
         content: "❌ Yunki Bot không có quyền **Manage Channels**.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -50,7 +51,7 @@ export default {
 
       return interaction.reply({
         content: "❌ Không thể thay đổi slowmode.",
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   }
