@@ -7,3 +7,9 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    ignore:
+      # Voice đi cùng @discordjs/voice 0.19 và sodium-native 4.x.
+      # Bản 5 đổi native (napi → libjs), không nâng khi voice đang ổn.
+      - dependency-name: "sodium-native"
+        update-types:
+          - "version-update:semver-major"
