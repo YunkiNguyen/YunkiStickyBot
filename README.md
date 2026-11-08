@@ -89,4 +89,4 @@ Bot chỉ cần intent `Guilds` và `GuildVoiceStates`.
 
 ## 7. Tên hiển thị
 
-Footer embed lấy từ `config.brand` (`Giáo Phái Phoebe`). Tên đầy đủ của server là `config.serverName` và hiện trong `/config`.
+Footer embed lấy từ `config.brand` (`Tên server`). Tên đầy đủ của server là `config.serverName` và hiện trong `/config`.
