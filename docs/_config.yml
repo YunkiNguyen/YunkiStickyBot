@@ -1,0 +1,7 @@
+title: "Yunki_BOT"
+description: "Điều khoản dịch vụ và Chính sách bảo mật của Yunki_BOT"
+theme: minima
+lang: vi
+header_pages:
+  - terms.md
+  - privacy.md
