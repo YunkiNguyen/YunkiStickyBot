@@ -5,6 +5,7 @@ import {
   Events,
   MessageFlags
 } from "discord.js";
+import { getVoiceConnection, VoiceConnectionStatus } from "@discordjs/voice";
 
 import fs from "fs";
 import os from "os";
@@ -12,7 +13,11 @@ import path from "path";
 import http from "http";
 import { fileURLToPath, pathToFileURL } from "url";
 
-import { joinSavedVoiceChannel, scheduleFastRejoin } from "./utils/voiceConnection.js";
+import {
+  joinSavedVoiceChannel,
+  scheduleFastRejoin,
+  isVoiceRecovering
+} from "./utils/voiceConnection.js";
 import { loadVoice, getVoiceChannel } from "./utils/voiceStore.js";
 import { resumeGiveaways } from "./utils/giveawayService.js";
 import { DATA_DIR } from "./utils/jsonStore.js";
@@ -226,14 +231,10 @@ healthServer.listen(PORT, "0.0.0.0", () => {
 // =====================================================
 
 const client = new Client({
-  // Bot chỉ dùng slash command + REST + voice nên không cần
-  // GuildMessages / MessageContent (privileged) / GuildMessageReactions.
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates
   ],
-  // Mặc định chỉ cho phép ping user; không bao giờ ping @everyone/@here/role
-  // từ nội dung do người dùng nhập. Nơi cần ping user khai báo allowedMentions riêng.
   allowedMentions: { parse: ["users"], repliedUser: false }
 });
 
@@ -288,7 +289,6 @@ async function resumeVoiceConnections() {
 
     console.log(`CHECKING VOICE CHANNELS: ${entries.length}`);
 
-    // Chạy song song để nhiều server không phải đợi nhau.
     await Promise.allSettled(
       entries.map(([guildId, channelId]) =>
         joinSavedVoiceChannel(client, guildId, channelId, "AUTO")
@@ -336,24 +336,40 @@ client.on(Events.ShardDisconnect, () => {
 });
 
 // =====================================================
-// VOICE STATE - backup khi Discord báo bot out
+// VOICE STATE - chỉ join mới nếu soft-rejoin không kịp
 // =====================================================
 
-client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+client.on(Events.VoiceStateUpdate, (oldState, newState) => {
   try {
     if (!client.user) return;
     if (oldState.id !== client.user.id) return;
+    if (!(oldState.channelId && !newState.channelId)) return;
 
-    if (oldState.channelId && !newState.channelId) {
-      const savedChannelId = getVoiceChannel(oldState.guild.id);
+    const guildId = oldState.guild.id;
+    if (!getVoiceChannel(guildId)) return;
 
-      if (!savedChannelId) return;
+    // Đợi soft-rejoin. Nếu bot đã vào lại cùng kênh thì không tạo connection mới.
+    setTimeout(() => {
+      if (!getVoiceChannel(guildId)) return;
+      if (isVoiceRecovering(guildId)) return;
+
+      const me = oldState.guild.members.me;
+      if (me?.voice?.channelId) return;
+
+      const existing = getVoiceConnection(guildId);
+      const stillUp = [
+        VoiceConnectionStatus.Signalling,
+        VoiceConnectionStatus.Connecting,
+        VoiceConnectionStatus.Ready
+      ];
+
+      if (existing && stillUp.includes(existing.state.status)) return;
 
       console.log(
         `BOT DISCONNECTED FROM VOICE: ${oldState.guild.name} -> rejoin`
       );
-      scheduleFastRejoin(oldState.guild.id, client);
-    }
+      scheduleFastRejoin(guildId, client, 300);
+    }, 2_500);
   } catch (error) {
     console.error("VOICE STATE UPDATE ERROR", error);
   }
