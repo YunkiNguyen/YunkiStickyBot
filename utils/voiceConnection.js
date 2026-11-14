@@ -10,12 +10,14 @@ import { getVoiceChannel, removeVoiceChannel } from "./voiceStore.js";
 const BASE_DELAY_MS = 300;
 const MAX_DELAY_MS = 60_000;
 const STABLE_AFTER_MS = 60_000;
-const READY_TIMEOUT_MS = 15_000;
+const READY_TIMEOUT_MS = 12_000;
+const SOFT_REJOIN_TIMEOUT_MS = 8_000;
 
 const rejoinLocks = new Set();
 const rejoinTimers = new Map();
 const rejoinAttempts = new Map();
 const stableTimers = new Map();
+const recovering = new Set();
 
 // Backoff: 300ms, 600ms, 1.2s ... tối đa 60s. Chỉ reset khi kết nối ổn định 60s.
 function nextDelay(guildId) {
@@ -39,11 +41,21 @@ function clearStableTimer(guildId) {
   }
 }
 
+/** Đang soft-rejoin hoặc đã có lịch join — đừng tạo thêm một lần nữa. */
+export function isVoiceRecovering(guildId) {
+  return (
+    recovering.has(guildId) ||
+    rejoinLocks.has(guildId) ||
+    rejoinTimers.has(guildId)
+  );
+}
+
 /** Huỷ mọi lịch rejoin của guild (dùng khi /leave). */
 export function cancelRejoin(guildId) {
   clearRejoinTimer(guildId);
   clearStableTimer(guildId);
   rejoinAttempts.delete(guildId);
+  recovering.delete(guildId);
 }
 
 /**
@@ -59,6 +71,37 @@ export function destroyConnectionQuietly(connection) {
     connection.destroy();
   } catch {
     // đã bị destroy trước đó
+  }
+}
+
+/**
+ * Nối lại đúng phiên voice cũ (không gửi leave).
+ * destroy() mới là lúc Discord ghi nhận bot rời kênh và reset thời gian phòng.
+ */
+async function trySoftRejoin(connection, guildId) {
+  if (!connection || connection.state.status === VoiceConnectionStatus.Destroyed) {
+    return false;
+  }
+
+  if (connection.state.status === VoiceConnectionStatus.Ready) {
+    return true;
+  }
+
+  recovering.add(guildId);
+
+  try {
+    if (connection.state.status === VoiceConnectionStatus.Disconnected) {
+      connection.rejoin();
+    }
+
+    await entersState(connection, VoiceConnectionStatus.Ready, SOFT_REJOIN_TIMEOUT_MS);
+    console.log(`VOICE SOFT REJOIN OK: ${guildId}`);
+    return true;
+  } catch {
+    console.log(`VOICE SOFT REJOIN FAILED: ${guildId}`);
+    return false;
+  } finally {
+    recovering.delete(guildId);
   }
 }
 
@@ -83,23 +126,36 @@ export function attachVoiceConnectionHandlers(connection, guildId, client) {
   });
 
   connection.on(VoiceConnectionStatus.Disconnected, async () => {
+    if (connection.__yunkiQuietDestroy) return;
+    if (recovering.has(guildId)) return;
+
     clearStableTimer(guildId);
 
     try {
-      // Thử recover nhanh trong 5s (Discord có thể chỉ lag tạm / bot bị chuyển kênh)
+      // Lag ngắn / bị chuyển kênh: Discord tự nối lại, không đụng vào.
       await Promise.race([
-        entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
-        entersState(connection, VoiceConnectionStatus.Connecting, 5_000)
+        entersState(connection, VoiceConnectionStatus.Signalling, 2_000),
+        entersState(connection, VoiceConnectionStatus.Connecting, 2_000),
+        entersState(connection, VoiceConnectionStatus.Ready, 2_000)
       ]);
       return;
     } catch {
-      destroyConnectionQuietly(connection);
-
-      if (!getVoiceChannel(guildId)) return; // đã /leave
-
-      console.log(`VOICE DISCONNECTED: ${guildId} -> rejoin`);
-      scheduleFastRejoin(guildId, client);
+      // vẫn Disconnected
     }
+
+    if (!getVoiceChannel(guildId)) return;
+
+    const recovered = await trySoftRejoin(connection, guildId);
+    if (recovered) return;
+
+    if (connection.state.status === VoiceConnectionStatus.Destroyed) {
+      scheduleFastRejoin(guildId, client);
+      return;
+    }
+
+    console.log(`VOICE DISCONNECTED: ${guildId} -> hard rejoin`);
+    destroyConnectionQuietly(connection);
+    scheduleFastRejoin(guildId, client);
   });
 
   connection.on(VoiceConnectionStatus.Destroyed, () => {
@@ -107,6 +163,7 @@ export function attachVoiceConnectionHandlers(connection, guildId, client) {
 
     if (connection.__yunkiQuietDestroy) return;
     if (!getVoiceChannel(guildId)) return;
+    if (isVoiceRecovering(guildId)) return;
 
     console.log(`VOICE DESTROYED: ${guildId} -> rejoin`);
     scheduleFastRejoin(guildId, client);
@@ -118,7 +175,8 @@ export function attachVoiceConnectionHandlers(connection, guildId, client) {
 }
 
 export function scheduleFastRejoin(guildId, client, delayMs = nextDelay(guildId)) {
-  clearRejoinTimer(guildId);
+  // Giữ timer đầu tiên. Event thứ hai (VoiceState + Disconnected) không được reset.
+  if (rejoinTimers.has(guildId) || recovering.has(guildId)) return;
 
   const timer = setTimeout(async () => {
     rejoinTimers.delete(guildId);
@@ -184,7 +242,6 @@ export async function joinSavedVoiceChannel(
       return false;
     }
 
-    // Đã có connection còn sống tới đúng kênh -> giữ nguyên.
     const existing = getVoiceConnection(guildId);
     const aliveStatuses = [
       VoiceConnectionStatus.Signalling,
@@ -192,13 +249,20 @@ export async function joinSavedVoiceChannel(
       VoiceConnectionStatus.Ready
     ];
 
-    if (
-      existing &&
-      existing.joinConfig?.channelId === channel.id &&
-      aliveStatuses.includes(existing.state.status)
-    ) {
-      attachVoiceConnectionHandlers(existing, guildId, client);
-      return true;
+    if (existing && existing.joinConfig?.channelId === channel.id) {
+      if (aliveStatuses.includes(existing.state.status)) {
+        attachVoiceConnectionHandlers(existing, guildId, client);
+        return true;
+      }
+
+      if (existing.state.status === VoiceConnectionStatus.Disconnected) {
+        const recovered = await trySoftRejoin(existing, guildId);
+        if (recovered) {
+          attachVoiceConnectionHandlers(existing, guildId, client);
+          console.log(`${reason} JOIN VOICE: ${channel.name} (${guild.name})`);
+          return true;
+        }
+      }
     }
 
     if (existing) destroyConnectionQuietly(existing);
@@ -217,8 +281,14 @@ export async function joinSavedVoiceChannel(
       await entersState(connection, VoiceConnectionStatus.Ready, READY_TIMEOUT_MS);
     } catch {
       console.log(
-        `VOICE NOT READY IN TIME: ${channel.name} (${guild.name}) -> sẽ thử lại với backoff`
+        `VOICE NOT READY IN TIME: ${channel.name} (${guild.name}) -> soft rejoin`
       );
+
+      const recovered = await trySoftRejoin(connection, guildId);
+      if (recovered) {
+        console.log(`${reason} JOIN VOICE: ${channel.name} (${guild.name})`);
+        return true;
+      }
 
       destroyConnectionQuietly(connection);
 
